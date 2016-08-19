@@ -1,6 +1,6 @@
-package mazed.graph.model
+package mazed.maze
 
-import mazed.graph.model.Dir._
+import mazed.maze.Dir._
 
 import scala.util.Random
 
@@ -12,7 +12,7 @@ private object Dir {
   val West = Dir(0x08)
 }
 
-private case class Dir(asInt: Int) extends AnyVal {
+case class Dir(asInt: Int) extends AnyVal {
 
   def +(that: Dir): Dir = Dir(this.asInt | that.asInt)
   def -(that: Dir): Dir = this + (-that)
@@ -21,6 +21,7 @@ private case class Dir(asInt: Int) extends AnyVal {
     case West ⇒ East
     case North ⇒ South
     case South ⇒ North
+    case d ⇒ sys.error(s"unsupported direction in unary - : $d")
   }
 
   def includes(dir: Dir): Boolean = (this.asInt & dir.asInt) != 0
@@ -34,14 +35,13 @@ private case class Cell(asXY: (Int, Int)) extends AnyVal {
     case West ⇒ Cell((x - 1, y))
     case North ⇒ Cell((x + 1, y - 1))
     case South ⇒ Cell((x + 1, y + 1))
+    case d ⇒ sys.error("unsupported direction in step: $d")
   }
 }
 
-
 object Maze {
 
-
-  def generate(height: Int, width: Int, strategy: ChooseStrategy): Maze = {
+  def generate(height: Int, width: Int, strategy: ChooseStrategy = NewestRandom5050): Maze = {
 
       implicit class IndexedSeqOps[A](seq: IndexedSeq[A]) {
         def removeAt(index: Int): IndexedSeq[A] = (seq take index) ++ (seq takeRight (seq.size - index - 1))
