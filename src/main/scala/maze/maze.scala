@@ -1,10 +1,9 @@
 package maze
 
-import scala.util.Random
-import MazeTypes._
+import maze.MazeTypes._
 
 import scala.collection.immutable.List
-import scala.collection.mutable.ListBuffer
+import scala.util.Random
 
 object MazeTypes {
   case class Direction(dx: Int, dy: Int)
@@ -44,7 +43,7 @@ object MazeBuilder {
 
   def main(args: Array[String]): Unit = {
     val grid = MazeBuilder.build(20,20)
-    println(grid.printGrid().mkString("\n"))
+    print(grid.printGrid().mkString("\n"))
   }
 }
 
@@ -60,10 +59,10 @@ class Grid(val width: Int, val height: Int, val doors: Set[Door], val visited: S
     visited.contains(loc)
 
   def neighbors(current: Loc): Set[Loc] =
-    directions.map(current + _).filter(inBounds(_)) -- visited
+    directions.map(current + _).filter(inBounds) -- visited
 
   def printGrid(): List[String] = {
-    (0 to height).toList.flatMap(y => printRow(y))
+    (0 to height).toList.flatMap(printRow)
   }
 
   private def inBounds(loc: Loc): Boolean =
@@ -71,20 +70,23 @@ class Grid(val width: Int, val height: Int, val doors: Set[Door], val visited: S
 
   private def printRow(y: Int): List[String] = {
     val row = (0 until width).toList.map(x => printCell(Loc(x, y)))
-    val rightSide = if (y == height-1) " " else "|"
+    val rightSide = if (y >= height - 1) " " else "|"
     val newRow = row :+ List("+", rightSide)
-    transpose(newRow).map(_.mkString)
+    // convert list of strings of size 2 into 2 lists of strings
+    val listOf2Strings = newRow.transpose.map(_.mkString)
+    // Bottom row has all spaces so trim
+    if (y == height) listOf2Strings take 1
+    else listOf2Strings
   }
 
   private val entrance = Loc(0,0)
 
   private def printCell(loc: Loc): List[String] = {
     if (loc.y == height)
-      List("+--")
+      List("+--", "   ")
     else List(
       if (openNorth(loc)) "+  " else "+--",
-      if (openWest(loc) || loc == entrance) "   " else "|  "
-    )
+      if (openWest(loc) || loc == entrance) "   " else "|  ")
   }
 
   def openNorth(loc: Loc): Boolean = openInDirection(loc, North)
@@ -93,21 +95,4 @@ class Grid(val width: Int, val height: Int, val doors: Set[Door], val visited: S
 
   private def openInDirection(loc: Loc, dir: Direction): Boolean =
     doors.contains(Door(loc, loc + dir)) || doors.contains(Door(loc + dir, loc))
-
-  /** Transposes a list of lists.
-    *  pre: All element lists have the same length.
-    *
-    *  @param xss the list of lists
-    *  @return    the transposed list of lists
-    */
-  @deprecated("use `xss.transpose` instead of `List.transpose(xss)`", "2.8.0")
-  private def transpose[A](xss: List[List[A]]): List[List[A]] = {
-    val buf = new ListBuffer[List[A]]
-    var yss = xss
-    while (!yss.head.isEmpty) {
-      buf += (yss map (_.head))
-      yss = (yss map (_.tail))
-    }
-    buf.toList
-  }
 }
