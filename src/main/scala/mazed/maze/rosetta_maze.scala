@@ -1,10 +1,15 @@
-package maze
+package mazed.maze
 
-import maze.MazeTypes._
+import mazed.maze.MazeTypes._
 
 import scala.collection.immutable.List
 import scala.util.Random
 
+/**
+  * Code cleaned up from [[http://rosettacode.org/wiki/Maze_generation]].
+  * Uses Recursive Backtracking algorithm, representing the maze as a
+  * Grid with a Set of Doors
+  */
 object MazeTypes {
   case class Direction(dx: Int, dy: Int)
 
@@ -42,7 +47,7 @@ object MazeBuilder {
   }
 
   def main(args: Array[String]): Unit = {
-    val grid = MazeBuilder.build(20,20)
+    val grid = MazeBuilder.build(args(0).toInt, args(1).toInt)
     print(grid.printGrid().mkString("\n"))
   }
 }
