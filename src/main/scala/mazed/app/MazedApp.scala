@@ -1,12 +1,13 @@
 package mazed.app
 
-import com.jme3.app.SimpleApplication
+import com.jme3.app.{DebugKeysAppState, SimpleApplication, StatsAppState}
 import com.jme3.material.Material
-import com.jme3.math.ColorRGBA.LightGray
 import com.jme3.math.{ColorRGBA, Vector3f}
 import com.jme3.scene.Geometry
 import com.jme3.scene.shape.Box
+import com.jme3.util.SkyFactory
 import com.typesafe.config.ConfigFactory
+import mazed.camera.{CustomFlyByCamera, CustomFlyCamAppState}
 import mazed.maze.WeightsFactory.makeWeights
 import mazed.maze.{ChooseStrategyImpl, Maze}
 
@@ -21,18 +22,24 @@ object MazedApp {
   }
 }
 
-class MazedApp(rand: Random) extends SimpleApplication {
+class MazedApp(rand: Random) extends SimpleApplication(new StatsAppState, new DebugKeysAppState) {
   val config = ConfigFactory.load()
   val configHelper = new ConfigHelper(config)
   val cellDim = configHelper.getVector3f("maze.cell")
 
-  override def simpleInitApp(): Unit = {
-    adjustCamera()
-    addFloor()
-    addMaze()
-    initKeys()
+  def addSky() = {
+    rootNode.attachChild(SkyFactory.createSky(
+      assetManager, "Textures/Sky/Bright/BrightSky.dds", false))
   }
 
+  override def simpleInitApp(): Unit = {
+    initCamera()
+    addFloor()
+    addSky()
+    addMaze()
+  }
+
+  // adds maze with upper left corner at origin
   private def addMaze(): Unit = {
     val wallThickness = config.getDouble("maze.wall.thickness").toFloat
     val wallColor = configHelper.getColor("maze.wall.color")
@@ -72,7 +79,10 @@ class MazedApp(rand: Random) extends SimpleApplication {
     }
   }
 
-  private def adjustCamera() = {
+  private def initCamera() = {
+    flyCam = new CustomFlyByCamera(cam)
+    stateManager.attach(new CustomFlyCamAppState(flyCam))
+
     val cameraHeight = config.getDouble("camera.height").toFloat
     val moveSpeed = config.getDouble("camera.moveSpeed").toFloat
     cam.setLocation(new Vector3f(-9f, cameraHeight, cellDim.z / 2))
@@ -81,9 +91,12 @@ class MazedApp(rand: Random) extends SimpleApplication {
   }
 
   private def addFloor(): Unit = {
-    val floorDim = configHelper.getVector3f("maze.floor")
+    val margin = config.getDouble("maze.floor.margin").toFloat
+    val floorDim = configHelper.getVector3f("maze.floor.size")
+    val color = configHelper.getColor("maze.floor.color")
     val floor = new Box(floorDim.x / 2, floorDim.y / 2, floorDim.z / 2)
-    addBox("Floor", floor, LightGray, new Vector3f(0, -floorDim.y / 2, 0))
+    val translation = new Vector3f(floorDim.x / 2 - margin, -floorDim.y / 2, floorDim.z / 2 - margin)
+    addBox("Floor", floor, color, translation)
   }
 
   private def addBox(name: String, box: Box, color: ColorRGBA, localTranslation: Vector3f = Vector3f.ZERO): Unit = {
@@ -94,7 +107,4 @@ class MazedApp(rand: Random) extends SimpleApplication {
     geom.setLocalTranslation(localTranslation)
     rootNode.attachChild(geom)
   }
-
-  private def initKeys(): Unit = {}
-
 }
