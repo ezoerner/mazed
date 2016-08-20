@@ -146,7 +146,7 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
         case y ⇒
           val indexes = (0 to width) filterNot {
             case x if x == width ⇒
-              this(Cell((x - 1, y))) includes East
+              this(Cell((x, y)) step West) includes East
             case x ⇒
               this(Cell((x, y))) includes West
           }
