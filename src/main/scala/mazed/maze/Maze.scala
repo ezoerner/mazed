@@ -1,6 +1,7 @@
 package mazed.maze
 
 import mazed.maze.Dir._
+import mazed.maze.WeightsFactory.makeWeights
 
 import scala.annotation.tailrec
 import scala.collection.BitSet
@@ -18,7 +19,6 @@ private object Dir {
 case class Dir(asInt: Int) extends AnyVal {
 
   def +(that: Dir): Dir = Dir(this.asInt | that.asInt)
-  def -(that: Dir): Dir = this + (-that)
   def unary_- = this match {
     case East ⇒ West
     case West ⇒ East
@@ -44,7 +44,12 @@ case class Cell(asXY: (Int, Int)) extends AnyVal {
 
 object Maze {
 
-  def generate(height: Int, width: Int, strategy: ChooseStrategy = NewestRandom5050): Maze = {
+  def generate(
+    height: Int,
+    width: Int,
+    strategy: ChooseStrategy = NewestRandom5050,
+    rand: Random = Random): Maze = {
+
       implicit class IndexedSeqOps[A](seq: IndexedSeq[A]) {
         def removeAt(index: Int): IndexedSeq[A] = (seq take index) ++ (seq takeRight (seq.size - index - 1))
       }
@@ -58,7 +63,7 @@ object Maze {
           val index = strategy.nextIndex(active.size)
           val cell = active(index)
 
-          val maybeUnknownDir: Option[Dir] = Random shuffle List(North, South, East, West) find { dir ⇒
+          val maybeUnknownDir: Option[Dir] = rand shuffle List(North, South, East, West) find { dir ⇒
             val neighbor = cell step dir
             (grid inBounds neighbor) && grid(neighbor) == Unknown
           }
@@ -76,15 +81,24 @@ object Maze {
         }
       }
 
-    val randomCell = Cell((Random nextInt width, Random nextInt height))
+    val randomCell = Cell((rand nextInt width, rand nextInt height))
     val active = IndexedSeq(randomCell)
     val grid = Maze(Vector.fill[Dir](height, width)(Unknown))
-    go(active, grid)
+    val maze = go(active, grid)
+    // fix up entrance and exit
+    val entrance = Cell((0,0))
+    val exit = Cell((width - 1, height - 1))
+    maze.updated(entrance, maze(entrance) + West).updated(exit, maze(exit) + East)
   }
 
   def main(args: Array[String]): Unit = {
-    val maze = generate(args(0).toInt, args(1).toInt)
-    print(maze.manifestAsString)
+    val seed = if (args.size > 2) Some(args(2).toLong) else None
+    println(s"seed=$seed")
+    val rand = seed.fold[Random](Random)(new Random(_))
+    val strategy = ChooseStrategyImpl(makeWeights(newest = 50, random = 50), rand)
+    val maze = generate(args(0).toInt, args(1).toInt, strategy, rand)
+    println(maze.manifestAsString)
+    maze.manifestAsBitSets.zipWithIndex foreach { case (bitSet, i) ⇒ println(s"i=$i; bitSet=$bitSet")}
   }
 }
 
@@ -121,16 +135,21 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
     */
   def manifestAsBitSets: List[BitSet] = {
     // the top and bottom borders include horizontal walls at every x value
-    val border = BitSet(0 to width: _*)
+    val border = BitSet(0 until width: _*)
 
-    (0 to height * 2).toList map { expandedY ⇒
-      expandedY / 2 match {
-        case y if y == height || y == 0 ⇒ border
-        case y if y % 2 == 0 ⇒
+    (0 to height * 2).toList map { i ⇒
+      i / 2 match {
+        case _ if i == height * 2 || i == 0 ⇒ border
+        case y if i % 2 == 0 ⇒
           val indexes = (0 until width) filterNot (x ⇒ this(Cell((x, y))) includes North)
           BitSet(indexes: _*)
         case y ⇒
-          val indexes = (0 to width) filterNot (x ⇒ x != width && (this(Cell((x, y))) includes West))
+          val indexes = (0 to width) filterNot {
+            case x if x == width ⇒
+              this(Cell((x - 1, y))) includes East
+            case x ⇒
+              this(Cell((x, y))) includes West
+          }
           BitSet(indexes: _*)
       }
     }

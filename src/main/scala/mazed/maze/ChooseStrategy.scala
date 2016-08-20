@@ -17,12 +17,13 @@ object OldestRandom5050 extends ChooseStrategyImpl(makeWeights(oldest = 50, rand
 
 trait ChooseStrategy {
   def weights: SortedMap[Symbol, Float]
+  def rand: Random
 
   /** Choose the next index < ceil, where 0 represents the oldest cell and
     * ceil - 1 represents the newest.
     */
-  def nextIndex(ceil: Int): Int = pick(Random.nextFloat() * weights.values.sum, weights) match {
-    case 'random ⇒ Random.nextInt(ceil)
+  def nextIndex(ceil: Int): Int = pick(rand.nextFloat() * weights.values.sum, weights) match {
+    case 'random ⇒ rand.nextInt(ceil)
     case 'newest ⇒ ceil - 1
     case 'middle ⇒ ceil / 2
     case 'oldest ⇒ 0
@@ -42,9 +43,10 @@ trait ChooseStrategy {
   }
 }
 
-case class ChooseStrategyImpl(override val weights: SortedMap[Symbol, Float]) extends ChooseStrategy
+case class ChooseStrategyImpl(override val weights: SortedMap[Symbol, Float], override val rand: Random = Random)
+  extends ChooseStrategy
 
-private object WeightsFactory {
+object WeightsFactory {
   trait SymbolOrdering extends Ordering[Symbol] {
     def compare(x: Symbol, y: Symbol) = x.name.compareTo(y.name)
   }
