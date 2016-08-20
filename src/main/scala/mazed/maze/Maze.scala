@@ -48,7 +48,6 @@ object Maze {
       }
 
       def go(active: IndexedSeq[Cell], grid: Maze): Maze = {
-        println(grid.manifestAsString)
         if (active.isEmpty) {
           grid
         }
@@ -56,7 +55,7 @@ object Maze {
           val index = strategy.nextIndex(active.size)
           val cell = active(index)
 
-          val maybeUnknownDir: Option[Dir] = Random.shuffle(List(North, South, East, West)).find { dir ⇒
+          val maybeUnknownDir: Option[Dir] = Random shuffle List(North, South, East, West) find { dir ⇒
             val neighbor = cell step dir
             (grid inBounds neighbor) && grid(neighbor) == Unknown
           }
@@ -71,7 +70,7 @@ object Maze {
         }
       }
 
-    val randomCell = Cell((Random.nextInt(width), Random.nextInt(height)))
+    val randomCell = Cell((Random nextInt width, Random nextInt height))
     val active = IndexedSeq(randomCell)
     val grid = Maze(Vector.fill[Dir](height, width)(Unknown))
     go(active, grid)
@@ -101,6 +100,35 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
   def xInBounds(x: Int): Boolean = x >= 0 && x < width
 
   def manifestAsString: String = {
+
+      def char2(dirHere: Dir, cellRight: Cell): String = {
+        if (!(dirHere includes East)) "|"
+        else if ((dirHere includes South) || (this (cellRight) includes South)) " " else "_"
+      }
+
+      def char1(dirHere: Dir): String = {
+        if (dirHere includes South) " " else "_"
+      }
+
+    val builder = new StringBuilder()
+    builder.append(" ")
+    builder.append(List.fill(width * 2 - 1)('_').mkString)
+    builder.append("\n")
+    asVector.zipWithIndex foreach {
+      case (row, y) ⇒
+        builder.append("|")
+        row.zipWithIndex foreach {
+          case (dirHere: Dir, x) ⇒
+            val cellRight = Cell((x, y)) step East
+            builder.append(char1(dirHere))
+            builder.append(char2(dirHere, cellRight))
+        }
+        builder.append("\n")
+    }
+    builder.toString
+  }
+
+  def manifestAsStringWithPossibleUnknowns: String = {
     val builder = new StringBuilder()
     builder.append(" ")
     builder.append(List.fill(width * 2 - 1)('_').mkString)

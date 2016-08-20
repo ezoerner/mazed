@@ -88,7 +88,7 @@ class Grid(val width: Int, val height: Int, val doors: Set[Door], val visited: S
 
   private def printCell(loc: Loc): List[String] = {
     if (loc.y == height)
-      List("+--", "   ")
+      List("+--", "   ")  // extra spaces to allow transpose to work (will trim later)
     else List(
       if (openNorth(loc)) "+  " else "+--",
       if (openWest(loc) || loc == entrance) "   " else "|  ")
