@@ -2,7 +2,6 @@ package mazed.maze
 
 import mazed.maze.MazeTypes._
 
-import scala.collection.immutable.List
 import scala.util.Random
 
 /**

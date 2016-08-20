@@ -3,6 +3,7 @@ package mazed.maze
 import mazed.maze.Dir._
 
 import scala.annotation.tailrec
+import scala.collection.BitSet
 import scala.util.Random
 
 private object Dir {
@@ -13,6 +14,7 @@ private object Dir {
   val West = Dir(0x08)
 }
 
+/** A Dir indicates a direction that is open */
 case class Dir(asInt: Int) extends AnyVal {
 
   def +(that: Dir): Dir = Dir(this.asInt | that.asInt)
@@ -43,7 +45,6 @@ case class Cell(asXY: (Int, Int)) extends AnyVal {
 object Maze {
 
   def generate(height: Int, width: Int, strategy: ChooseStrategy = NewestRandom5050): Maze = {
-
       implicit class IndexedSeqOps[A](seq: IndexedSeq[A]) {
         def removeAt(index: Int): IndexedSeq[A] = (seq take index) ++ (seq takeRight (seq.size - index - 1))
       }
@@ -83,7 +84,7 @@ object Maze {
 
   def main(args: Array[String]): Unit = {
     val maze = generate(args(0).toInt, args(1).toInt)
-    println(maze.manifestAsString)
+    print(maze.manifestAsString)
   }
 }
 
@@ -91,20 +92,51 @@ object Maze {
   * of the four directions.
   */
 case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
-  def apply(cell: Cell): Dir = try asVector(cell.y)(cell.x) catch {
+  def width = asVector(0).size
+  def height = asVector.size
+  def entrance = Cell((0, 0))
+  def exit = Cell((width - 1, height - 1))
+
+  private def apply(cell: Cell): Dir = try asVector(cell.y)(cell.x) catch {
     case e: IndexOutOfBoundsException ⇒ throw new RuntimeException(s"${cell.x},${cell.y}", e)
   }
-  def updated(cell: Cell, dir: Dir): Maze = Maze(asVector.updated(cell.y, asVector(cell.y).updated(cell.x, dir)))
+  private def updated(cell: Cell, dir: Dir): Maze = Maze(asVector.updated(cell.y, asVector(cell.y).updated(cell.x, dir)))
+  private def inBounds(cell: Cell): Boolean = xInBounds(cell.x) && yInBounds(cell.y)
+  private def yInBounds(y: Int): Boolean = y >= 0 && y < height
+  private def xInBounds(x: Int): Boolean = x >= 0 && x < width
 
-  def width = asVector(0).size
+  /**
+    * Each row is represented as a BitSet containing the x-values where a WALL is present.
+    *
+    * Even-indexed rows have horizontal walls (East-West). The range is 0 through width - 1 for these rows,
+    * representing walls above (North) of the cells.
+    *
+    * Odd-indexed rows have vertical walls (North-South). The range is 0 through width for these rows,
+    * representing the walls to the left (West) of the cells and including the right border.
+    *
+    * There are (height * 2 + 1) BitSets in the List (the "extra" row representing the bottom border)
+    * the index being the possible wall to the North of a cell.
+    *
+    * This representation can be used to draw the maze in 2D or 3D.
+    */
+  def manifestAsBitSets: List[BitSet] = {
+    // the top and bottom borders include horizontal walls at every x value
+    val border = BitSet(0 to width: _*)
 
-  def height = asVector.size
+    (0 to height * 2).toList map { expandedY ⇒
+      expandedY / 2 match {
+        case y if y == height || y == 0 ⇒ border
+        case y if y % 2 == 0 ⇒
+          val indexes = (0 until width) filterNot (x ⇒ this(Cell((x, y))) includes North)
+          BitSet(indexes: _*)
+        case y ⇒
+          val indexes = (0 to width) filterNot (x ⇒ x != width && (this(Cell((x, y))) includes West))
+          BitSet(indexes: _*)
+      }
+    }
+  }
 
-  def inBounds(cell: Cell): Boolean = xInBounds(cell.x) && yInBounds(cell.y)
-  def yInBounds(y: Int): Boolean = y >= 0 && y < height
-  def xInBounds(x: Int): Boolean = x >= 0 && x < width
-
-  def manifestAsString: String = {
+  def manifestAsCompactString: String = {
 
       def char2(dirHere: Dir, cellRight: Cell): String = {
         if (!(dirHere includes East)) "|"
@@ -132,4 +164,31 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
     }
     builder.toString
   }
+
+  def manifestAsString: String = {
+    gridAsStrings.mkString("\n")
+  }
+
+  private def gridAsStrings: List[String] = {
+    (0 to height).toList flatMap rowAsStrings
+  }
+
+  // can be called with y from 0 to height inclusive to get a bottom border
+  private def rowAsStrings(y: Int): List[String] = {
+    val row = (0 until width).toList map (x => cellAsStrings(Cell((x, y))))
+    val rightBorder = if (y >= exit.y) " " else "|"
+    val newRow = row :+ List("+", rightBorder)
+    // convert list of strings of size 2 into 2 lists of strings
+    val listOf2Strings = newRow.transpose map (_.mkString)
+    // Bottom row has all spaces so trim
+    if (y == height) listOf2Strings take 1
+    else listOf2Strings
+  }
+
+  private def cellAsStrings(cell: Cell): List[String] =
+    // normalize to two Strings to allow transpose to work
+    if (cell.y == height) List("+--", "   ")
+    else List(
+      if (this(cell) includes North) "+  " else "+--",
+      if ((this(cell) includes West) || cell == entrance) "   " else "|  ")
 }
