@@ -127,39 +127,4 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
     }
     builder.toString
   }
-
-  def manifestAsStringWithPossibleUnknowns: String = {
-    val builder = new StringBuilder()
-    builder.append(" ")
-    builder.append(List.fill(width * 2 - 1)('_').mkString)
-    builder.append("\n")
-    asVector.zipWithIndex foreach {
-      case (row, y) ⇒
-        builder.append("|")
-        row.zipWithIndex foreach {
-          case (dirHere: Dir, x) ⇒
-            val cellHere = Cell((x, y))
-            val cellBelow = cellHere step South
-            val cellRight = cellHere step East
-            val cellBelowRight = cellBelow step East
-            val noFloor1 = (dirHere == Unknown && yInBounds(cellBelow.y) && apply(cellBelow) == Unknown) ||
-                           (dirHere includes South)
-            builder.append(if (noFloor1) " " else "_")
-
-            if (dirHere == Unknown && xInBounds(cellRight.x) && this(cellRight) == Unknown) {
-              val noFloor2 = yInBounds(cellBelow.y) && (this(cellBelow) == Unknown || this(cellBelowRight) == Unknown)
-              builder.append(if (noFloor2) " " else "_")
-            }
-            else if (dirHere includes East) {
-              val noFloor2 = (dirHere + this(cellRight)) includes South
-              builder.append(if (noFloor2) " " else "_")
-            }
-            else {
-              builder.append("|")
-            }
-        }
-        builder.append("\n")
-    }
-    builder.toString
-  }
 }
