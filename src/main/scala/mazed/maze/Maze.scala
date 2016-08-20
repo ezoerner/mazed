@@ -2,6 +2,7 @@ package mazed.maze
 
 import mazed.maze.Dir._
 
+import scala.annotation.tailrec
 import scala.util.Random
 
 private object Dir {
@@ -47,6 +48,7 @@ object Maze {
         def removeAt(index: Int): IndexedSeq[A] = (seq take index) ++ (seq takeRight (seq.size - index - 1))
       }
 
+      @tailrec
       def go(active: IndexedSeq[Cell], grid: Maze): Maze = {
         if (active.isEmpty) {
           grid
@@ -60,12 +62,15 @@ object Maze {
             (grid inBounds neighbor) && grid(neighbor) == Unknown
           }
 
-          maybeUnknownDir.fold[Maze](go(active removeAt index, grid)) { dir ⇒
-            val neighbor = cell step dir
-            val dirHere = grid(cell)
-            val hereUpdated = grid.updated(cell, dirHere + dir)
-            val neighborUpdated = hereUpdated.updated(neighbor, -dir)
-            go(active :+ neighbor, neighborUpdated)
+          // use of pattern matching here instead of fold or map/getOrElse provides tail-recursion
+          maybeUnknownDir match {
+            case None ⇒ go(active removeAt index, grid)
+            case Some(dir) ⇒
+              val neighbor = cell step dir
+              val dirHere = grid(cell)
+              val hereUpdated = grid.updated(cell, dirHere + dir)
+              val neighborUpdated = hereUpdated.updated(neighbor, -dir)
+              go(active :+ neighbor, neighborUpdated)
           }
         }
       }
