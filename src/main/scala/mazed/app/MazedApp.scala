@@ -2,9 +2,11 @@ package mazed.app
 
 import com.jme3.app.{DebugKeysAppState, SimpleApplication, StatsAppState}
 import com.jme3.math.Vector3f
+import com.jme3.system.AppSettings
 import com.jme3.util.SkyFactory
 import com.typesafe.config.ConfigFactory
 import mazed.camera.{CustomFlyByCamera, CustomFlyCamAppState}
+import org.lwjgl.opengl.{Display, DisplayMode}
 
 import scala.util.Random
 
@@ -13,7 +15,25 @@ object MazedApp {
   def main(args: Array[String]): Unit = {
     val seed = if (args.size > 0) Some(args(0).toLong) else None
     val rand = seed.fold[Random](Random)(new Random(_))
-    new MazedApp(rand).start()
+    val app = new MazedApp(rand)
+
+    val (Some(displayMode), _) = Display.getAvailableDisplayModes.
+      foldLeft((Option.empty[DisplayMode], 0)) {
+        case ((maybeMaxDm, sz), thisDm) ⇒
+          val thisSize = thisDm.getHeight * thisDm.getWidth
+          if (thisSize > sz && thisDm.isFullscreenCapable) (Some(thisDm), thisSize) else (maybeMaxDm, sz)
+      }
+    println(s"DisplayMode = $displayMode")
+
+    val gameSettings = new AppSettings(true)
+    gameSettings.setFullscreen(true)
+    gameSettings.setBitsPerPixel(displayMode.getBitsPerPixel)
+    gameSettings.setResolution(displayMode.getWidth, displayMode.getHeight)
+    gameSettings.setFrequency(displayMode.getFrequency)
+    gameSettings.setTitle("Mazed")
+    app.setSettings(gameSettings)
+    app.setShowSettings(false)
+    app.start()
   }
 }
 
