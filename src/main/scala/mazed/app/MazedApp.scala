@@ -2,9 +2,10 @@ package mazed.app
 
 import com.jme3.app.{DebugKeysAppState, SimpleApplication, StatsAppState}
 import com.jme3.material.Material
-import com.jme3.math.{ColorRGBA, Vector3f}
-import com.jme3.scene.Geometry
+import com.jme3.math.Vector3f
 import com.jme3.scene.shape.Box
+import com.jme3.scene.{Geometry, Node}
+import com.jme3.texture.Texture.WrapMode
 import com.jme3.util.SkyFactory
 import com.typesafe.config.ConfigFactory
 import mazed.camera.{CustomFlyByCamera, CustomFlyCamAppState}
@@ -41,8 +42,18 @@ class MazedApp(rand: Random) extends SimpleApplication(new StatsAppState, new De
 
   // adds maze with upper left corner at origin
   private def addMaze(): Unit = {
+    val mazeNode = new Node()
+
+      def addWall(box: Box, translation: Vector3f) = {
+        addBox(
+          "wall",
+          box,
+          "maze.wall",
+          translation = translation,
+          node = mazeNode)
+      }
+
     val wallThickness = config.getDouble("maze.wall.thickness").toFloat
-    val wallColor = configHelper.getColor("maze.wall.color")
 
     val strategy = ChooseStrategyImpl(makeWeights(newest = 50, random = 50), rand)
     val maze = Maze.generate(
@@ -58,25 +69,17 @@ class MazedApp(rand: Random) extends SimpleApplication(new StatsAppState, new De
         case y if (i % 2) == 0 ⇒
           bitSet foreach { x ⇒
             val wall = new Box(cellDim.x / 2, cellDim.y / 2, wallThickness / 2)
-            addBox(
-              "wall",
-              wall,
-              wallColor,
-              new Vector3f(wall.xExtent + x * cellDim.x, wall.yExtent, wall.zExtent + y * cellDim.z))
+            addWall(wall, new Vector3f(wall.xExtent + x * cellDim.x, wall.yExtent, wall.zExtent + y * cellDim.z))
           }
         // odd i, North/South walls
         case y ⇒
           bitSet foreach { x ⇒
             val wall = new Box(wallThickness / 2, cellDim.y / 2, cellDim.z / 2)
-            addBox(
-              "wall",
-              wall,
-              wallColor,
-              new Vector3f(wall.xExtent + x * cellDim.x, wall.yExtent, wall.zExtent + y * cellDim.z)
-            )
+            addWall(wall, new Vector3f(wall.xExtent + x * cellDim.x, wall.yExtent, wall.zExtent + y * cellDim.z))
           }
       }
     }
+    rootNode.attachChild(mazeNode)
   }
 
   private def initCamera() = {
@@ -93,18 +96,32 @@ class MazedApp(rand: Random) extends SimpleApplication(new StatsAppState, new De
   private def addFloor(): Unit = {
     val margin = config.getDouble("maze.floor.margin").toFloat
     val floorDim = configHelper.getVector3f("maze.floor.size")
-    val color = configHelper.getColor("maze.floor.color")
     val floor = new Box(floorDim.x / 2, floorDim.y / 2, floorDim.z / 2)
     val translation = new Vector3f(floorDim.x / 2 - margin, -floorDim.y / 2, floorDim.z / 2 - margin)
-    addBox("Floor", floor, color, translation)
+    addBox("Floor", floor, "maze.floor", translation = translation)
   }
 
-  private def addBox(name: String, box: Box, color: ColorRGBA, localTranslation: Vector3f = Vector3f.ZERO): Unit = {
+  private def addBox(
+      name: String,
+      box: Box,
+      configPath: String,
+      translation: Vector3f = Vector3f.ZERO,
+      node: Node = rootNode): Unit = {
+
     val geom: Geometry = new Geometry(name, box)
     val mat: Material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md")
-    mat.setColor("Color", color)
+    val cfg = new ConfigHelper(config.getConfig(configPath))
+    cfg.getOptionalVector2f("textureScale") foreach { v2 ⇒
+      box.scaleTextureCoordinates(v2)
+    }
+    cfg.getOptionalString("texture") foreach { t ⇒
+      val tex = assetManager.loadTexture(t)
+      tex.setWrap(WrapMode.MirroredRepeat)
+      mat.setTexture("ColorMap", tex)
+    }
+    cfg.getOptionalColor("color") foreach (c ⇒ mat.setColor("Color", c))
     geom.setMaterial(mat)
-    geom.setLocalTranslation(localTranslation)
-    rootNode.attachChild(geom)
+    geom.setLocalTranslation(translation)
+    node.attachChild(geom)
   }
 }
