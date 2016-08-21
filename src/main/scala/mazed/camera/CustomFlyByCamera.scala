@@ -11,6 +11,7 @@ class CustomFlyByCamera(c: Camera) extends FlyByCamera(c) {
   val doublePressNanos = NANOSECONDS.convert(1, SECONDS)
   var flyingEnabled = false
   var lastSpaceNanos = 0L
+  moveSpeed = 0.2f
 
   override def registerWithInput(inputManager: InputManager): Unit = {
     super.registerWithInput(inputManager)
@@ -30,10 +31,12 @@ class CustomFlyByCamera(c: Camera) extends FlyByCamera(c) {
 
     if (sideways) cam.getLeft(vel)
     else cam.getDirection(vel)
-    vel.multLocal(value * moveSpeed)
 
     // disallow vertical (y) movement with moveCamera operation
+    // and use full x/y magnitude
     vel.setY(0f)
+    vel.normalizeLocal()
+    vel.multLocal(value * moveSpeed)
 
     if (motionAllowed != null) motionAllowed.checkMotionAllowed(pos, vel)
     else pos.addLocal(vel)

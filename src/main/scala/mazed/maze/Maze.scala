@@ -133,11 +133,11 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
     *
     * This representation can be used to draw the maze in 2D or 3D.
     */
-  def manifestAsBitSets: List[BitSet] = {
+  def manifestAsBitSets: IndexedSeq[BitSet] = {
     // the top and bottom borders include horizontal walls at every x value
     val border = BitSet(0 until width: _*)
 
-    (0 to height * 2).toList map { i ⇒
+    (0 to height * 2).toIndexedSeq map { i ⇒
       i / 2 match {
         case _ if i == height * 2 || i == 0 ⇒ border
         case y if i % 2 == 0 ⇒
