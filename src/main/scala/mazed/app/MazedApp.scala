@@ -25,23 +25,27 @@ object MazedApp {
     val rand = seed.fold[Random](Random)(new Random(_))
     val app = new MazedApp(rand, config)
 
-    val (Some(displayMode), _) = Display.getAvailableDisplayModes.
-      foldLeft((Option.empty[DisplayMode], 0)) {
-        case ((maybeMaxDm, sz), thisDm) ⇒
-          val thisSize = thisDm.getHeight * thisDm.getWidth
-          if (thisSize > sz && thisDm.isFullscreenCapable) (Some(thisDm), thisSize) else (maybeMaxDm, sz)
-      }
-    println(s"DisplayMode = $displayMode")
+    val isWindows = System.getProperty("os.name").toLowerCase contains "windows"
 
-    val fullscreen = config.getBoolean("game.fullscreen")
-    val gameSettings = new AppSettings(true)
-    gameSettings.setFullscreen(fullscreen)
-    gameSettings.setBitsPerPixel(displayMode.getBitsPerPixel)
-    gameSettings.setResolution(displayMode.getWidth, displayMode.getHeight)
-    gameSettings.setFrequency(displayMode.getFrequency)
-    gameSettings.setTitle("Mazed")
-    app.setSettings(gameSettings)
-    app.setShowSettings(false)
+    if (!isWindows) {
+      val (Some(displayMode), _) = Display.getAvailableDisplayModes.
+        foldLeft((Option.empty[DisplayMode], 0)) {
+          case ((maybeMaxDm, sz), thisDm) ⇒
+            val thisSize = thisDm.getHeight * thisDm.getWidth
+            if (thisSize > sz && thisDm.isFullscreenCapable) (Some(thisDm), thisSize) else (maybeMaxDm, sz)
+        }
+      println(s"DisplayMode = $displayMode")
+
+      val fullscreen: Boolean = config.getBoolean("game.fullscreen")
+      val gameSettings = new AppSettings(true)
+      gameSettings.setBitsPerPixel(displayMode.getBitsPerPixel)
+      gameSettings.setResolution(displayMode.getWidth, displayMode.getHeight)
+      gameSettings.setFrequency(displayMode.getFrequency)
+      gameSettings.setTitle("Mazed")
+      gameSettings.setFullscreen(fullscreen)
+      app.setSettings(gameSettings)
+      app.setShowSettings(false)
+    }
     app.start()
   }
 }
