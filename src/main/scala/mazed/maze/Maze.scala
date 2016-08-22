@@ -85,10 +85,11 @@ object Maze {
     val active = IndexedSeq(randomCell)
     val grid = Maze(Vector.fill[Dir](height, width)(Unknown))
     val maze = go(active, grid)
-    // fix up entrance and exit
-    val entrance = Cell((0,0))
+
+    // fix up entrance (0,0) and exit
+    // leave entrance solid (later becomes glass); remove wall for exit
     val exit = Cell((width - 1, height - 1))
-    maze.updated(entrance, maze(entrance) + West).updated(exit, maze(exit) + East)
+    maze.updated(exit, maze(exit) + East)
   }
 
   def main(args: Array[String]): Unit = {
@@ -209,5 +210,5 @@ case class Maze(asVector: Vector[Vector[Dir]]) extends AnyVal {
     if (cell.y == height) List("+--", "   ")
     else List(
       if (this(cell) includes North) "+  " else "+--",
-      if ((this(cell) includes West) || cell == entrance) "   " else "|  ")
+      if (this (cell) includes West) "   " else "|  ")
 }

@@ -2,13 +2,15 @@ package mazed.app
 
 import com.jme3.asset.AssetManager
 import com.jme3.material.Material
+import com.jme3.material.RenderState.BlendMode
 import com.jme3.math.Vector3f
+import com.jme3.renderer.queue.RenderQueue.Bucket
 import com.jme3.scene.shape.Box
 import com.jme3.scene.{Geometry, Node}
 import com.jme3.texture.Texture.WrapMode
 import com.typesafe.config.Config
 import mazed.maze.WeightsFactory._
-import mazed.maze.{ChooseStrategyImpl, Maze}
+import mazed.maze.{Cell, ChooseStrategyImpl, Maze}
 
 import scala.collection.BitSet
 import scala.util.Random
@@ -16,7 +18,7 @@ import scala.util.Random
 class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random = Random) {
   private val configHelper = new ConfigHelper(config)
   val cellDim = configHelper.getVector3f("maze.cell")
-
+  val entrance = Cell((0, 0))
 
   def build: Node = {
     val node = new Node()
@@ -93,7 +95,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
       val wall2Trans = if (buttWest) new Vector3f(wall2.xExtent + x * cellDim.x + wallThickness, wall2.yExtent, wall2.zExtent + y * cellDim.z)
                        else wall1Trans
 
-      addWall(wall2, wall2Trans, mazeNode)
+      addWall(wall2, wall2Trans, false, mazeNode)
     }
   }
 
@@ -121,14 +123,14 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
     // if butt north, then extra z-translation
     val translation = if (buttNorth) new Vector3f(baseTrans.x, baseTrans.y, baseTrans.z + wallThickness)
                       else baseTrans
-    addWall(wall, translation, mazeNode)
+    addWall(wall, translation, Cell((x, y)) == entrance, mazeNode)
   }
 
-  private def addWall(box: Box, translation: Vector3f, node: Node) = {
+  private def addWall(box: Box, translation: Vector3f, isEntrance: Boolean, node: Node) = {
     addBox(
       "wall",
       box,
-      "maze.wall",
+      if (isEntrance) "maze.entrance" else "maze.wall",
       translation,
       node)
   }
@@ -146,13 +148,22 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
   cfg.getOptionalVector2f("textureScale") foreach { v2 ⇒
     box.scaleTextureCoordinates(v2)
   }
+
+  val isTransparent = cfg.getOptionalBoolean("transparent").fold(false)(identity)
   cfg.getOptionalString("texture") foreach { t ⇒
     val tex = assetManager.loadTexture(t)
     tex.setWrap(WrapMode.Repeat)
+    if (isTransparent) {
+      mat.setTransparent(true)
+      mat.getAdditionalRenderState.setBlendMode(BlendMode.Alpha)
+    }
     mat.setTexture("ColorMap", tex)
   }
   cfg.getOptionalColor("color") foreach (c ⇒ mat.setColor("Color", c))
   geom.setMaterial(mat)
+  if (isTransparent) {
+    geom.setQueueBucket(Bucket.Transparent)
+  }
   geom.setLocalTranslation(translation)
   node.attachChild(geom)
 }

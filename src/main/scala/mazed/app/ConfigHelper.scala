@@ -41,4 +41,8 @@ class ConfigHelper(config: Config) {
     if (config.hasPath(path)) Some(getVector2f(path))
     else None
 
+  def getOptionalBoolean(path: String) = {
+    if (config.hasPath(path)) Some(config.getBoolean(path))
+    else None
+  }
 }
