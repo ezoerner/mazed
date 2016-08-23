@@ -13,7 +13,6 @@ import com.jme3.math.{ColorRGBA, Vector3f}
 import com.jme3.system.AppSettings
 import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
-import org.lwjgl.opengl.{Display, DisplayMode}
 
 import scala.util.Random
 
@@ -23,29 +22,37 @@ object MazedApp {
     val config = ConfigFactory.load()
     val seed = if (args.size > 0) Some(args(0).toLong) else None
     val rand = seed.fold[Random](Random)(new Random(_))
+
+    val gameSettings = new AppSettings(true)
+
+/*
+        // extracts native libraries so lwjgl dll is available
+        JmeSystem.initialize(gameSettings)
+
+        val (Some(displayMode), _) = Display.getAvailableDisplayModes.
+          foldLeft((Option.empty[DisplayMode], 0)) {
+            case ((maybeMaxDm, sz), thisDm) ⇒
+              val thisSize = thisDm.getHeight * thisDm.getWidth
+              if (thisSize > sz && thisDm.isFullscreenCapable) (Some(thisDm), thisSize) else (maybeMaxDm, sz)
+          }
+        println(s"DisplayMode = $displayMode")
+
+        val fullscreen: Boolean = config.getBoolean("game.fullscreen")
+        gameSettings.setBitsPerPixel(displayMode.getBitsPerPixel)
+        gameSettings.setResolution(displayMode.getWidth, displayMode.getHeight)
+        gameSettings.setFrequency(displayMode.getFrequency)
+        gameSettings.setTitle("Mazed")
+        gameSettings.setFullscreen(fullscreen)
+    */
+    val settingsDialogImage = config.getString("app.settingsDialogImage")
+    gameSettings.setSettingsDialogImage(settingsDialogImage)
+
     val app = new MazedApp(rand, config)
+    app.setSettings(gameSettings)
+/*
+    app.setShowSettings(false)
+*/
 
-    val isWindows = System.getProperty("os.name").toLowerCase contains "windows"
-
-    if (!isWindows) {
-      val (Some(displayMode), _) = Display.getAvailableDisplayModes.
-        foldLeft((Option.empty[DisplayMode], 0)) {
-          case ((maybeMaxDm, sz), thisDm) ⇒
-            val thisSize = thisDm.getHeight * thisDm.getWidth
-            if (thisSize > sz && thisDm.isFullscreenCapable) (Some(thisDm), thisSize) else (maybeMaxDm, sz)
-        }
-      println(s"DisplayMode = $displayMode")
-
-      val fullscreen: Boolean = config.getBoolean("game.fullscreen")
-      val gameSettings = new AppSettings(true)
-      gameSettings.setBitsPerPixel(displayMode.getBitsPerPixel)
-      gameSettings.setResolution(displayMode.getWidth, displayMode.getHeight)
-      gameSettings.setFrequency(displayMode.getFrequency)
-      gameSettings.setTitle("Mazed")
-      gameSettings.setFullscreen(fullscreen)
-      app.setSettings(gameSettings)
-      app.setShowSettings(false)
-    }
     app.start()
   }
 }
