@@ -1,13 +1,13 @@
 name := "mazed"
 
-version := "0.2-SNAPSHOT"
+version := "0.2.5-SNAPSHOT"
 
 scalaVersion := "2.12.0-M5"
 
 resolvers += Resolver.bintrayRepo("jmonkeyengine", "com.jme3")
 
 libraryDependencies ++= Seq(
-  "com.typesafe" % "config" % "1.3.0") ++ jME3Dependencies
+  "com.typesafe" % "config" % "1.3.0") ++ jME3Dependencies ++ logging
 
 mainClass in assembly := Some("mazed.app.MazedApp")
 
@@ -26,3 +26,19 @@ lazy val jME3Dependencies = Seq(
 )
 
 def jME3(name: String, config: Configuration = Compile) = "com.jme3" % s"jme3-$name" % "3.0.10" % config
+
+lazy val logging = Seq(
+  slf4j_api,
+  logback,
+//  slf4j_jcl_adapter,
+  slf4j_jul_adapter
+//  slf4j_log4j_adapter
+)
+
+lazy val slf4j_api = slf4j("slf4j-api")
+lazy val logback = "ch.qos.logback" % "logback-classic" % "1.1.7"
+lazy val slf4j_jcl_adapter = slf4j("jcl-over-slf4j")
+lazy val slf4j_log4j_adapter = slf4j("log4j-over-slf4j")
+lazy val slf4j_jul_adapter = slf4j("jul-to-slf4j")
+
+def slf4j(name: String) = "org.slf4j" % name % "1.7.21"
