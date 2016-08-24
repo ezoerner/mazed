@@ -20,16 +20,14 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
   val cellDim = configHelper.getVector3f("maze.cell")
   val entrance = Cell((0, 0))
 
-  def build: Node = {
-    val node = new Node()
-    addFloor(node)
-    addMaze(node)
-    node
+  /** returns the maze  and the floor */
+  def build: (Node, Geometry) = {
+    (createMaze, createFloor)
   }
 
   // adds maze with upper left corner at origin
-  private def addMaze(node: Node): Unit = {
-
+  private def createMaze: Node = {
+    val mazeNode = new Node()
     val wallThickness = config.getDouble("maze.wall.thickness").toFloat
 
     val strategy = ChooseStrategyImpl(makeWeights(newest = 50, random = 50), rand)
@@ -44,14 +42,15 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
       i / 2 match {
         // even i, East/West walls
         case y if (i % 2) == 0 ⇒
-          addEastWestWalls(node, wallThickness, bitSets, bitSet, i, y)
+          addEastWestWalls(mazeNode, wallThickness, bitSets, bitSet, i, y)
         // odd i, North/South walls
         case y ⇒
           bitSet foreach { x ⇒
-            addNorthSouthWalls(node, wallThickness, bitSets, i, y, x)
+            addNorthSouthWalls(mazeNode, wallThickness, bitSets, i, y, x)
           }
       }
     }
+    mazeNode
   }
 
   private def addEastWestWalls(
@@ -95,7 +94,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
       val wall2Trans = if (buttWest) new Vector3f(wall2.xExtent + x * cellDim.x + wallThickness, wall2.yExtent, wall2.zExtent + y * cellDim.z)
                        else wall1Trans
 
-      addWall(wall2, wall2Trans, false, mazeNode)
+      addWall(wall2, wall2Trans, isEntrance = false, mazeNode)
     }
   }
 
@@ -132,7 +131,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
       box,
       if (isEntrance) "maze.entrance" else "maze.wall",
       translation,
-      node)
+      Some(node))
   }
 
   private def addBox(
@@ -140,7 +139,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
     box: Box,
     configPath: String,
     translation: Vector3f,
-    node: Node): Unit = {
+    maybeNode: Option[Node]): Geometry = {
 
   val geom: Geometry = new Geometry(name, box)
   val mat: Material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md")
@@ -165,15 +164,16 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
     geom.setQueueBucket(Bucket.Transparent)
   }
   geom.setLocalTranslation(translation)
-  node.attachChild(geom)
+  maybeNode foreach (node ⇒ node.attachChild(geom))
+  geom
 }
 
-private def addFloor(node: Node): Unit = {
+private def createFloor: Geometry = {
   val margin = config.getDouble("maze.floor.margin").toFloat
   val floorDim = configHelper.getVector3f("maze.floor.size")
   val floor = new Box(floorDim.x / 2, floorDim.y / 2, floorDim.z / 2)
   val translation = new Vector3f(floorDim.x / 2 - margin, -floorDim.y / 2, floorDim.z / 2 - margin)
-  addBox("Floor", floor, "maze.floor", translation, node)
+  addBox("Floor", floor, "maze.floor", translation, None)
 }
 
 
