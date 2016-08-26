@@ -17,7 +17,7 @@ import com.jme3.scene.{CameraNode, Node}
 import com.jme3.system.{AppSettings, JmeContext, JmeSystem}
 import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
-import org.slf4j.LoggerFactory
+import com.typesafe.scalalogging.LazyLogging
 import org.slf4j.bridge.SLF4JBridgeHandler
 
 import scala.util.Random
@@ -51,8 +51,10 @@ object MazedApp {
 }
 
 class MazedApp(rand: Random, config: Config)
-  extends SimpleApplication(new StatsAppState, new DebugKeysAppState) with ActionListener with AnalogListener {
-  val logger = LoggerFactory.getLogger(this.getClass)
+  extends SimpleApplication(new StatsAppState, new DebugKeysAppState)
+          with ActionListener
+          with AnalogListener
+          with LazyLogging {
 
   private val configHelper = new ConfigHelper(config)
   private var bulletAppState: BulletAppState = _

@@ -2,7 +2,7 @@ name := "mazed"
 
 version := "0.2.5-SNAPSHOT"
 
-scalaVersion := "2.12.0-M5"
+scalaVersion := "2.11.8"
 
 resolvers += Resolver.bintrayRepo("jmonkeyengine", "com.jme3")
 
@@ -30,9 +30,8 @@ def jME3(name: String, config: Configuration = Compile) = "com.jme3" % s"jme3-$n
 lazy val logging = Seq(
   slf4j_api,
   logback,
-//  slf4j_jcl_adapter,
-  slf4j_jul_adapter
-//  slf4j_log4j_adapter
+  slf4j_jul_adapter,
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.4.0"
 )
 
 lazy val slf4j_api = slf4j("slf4j-api")
