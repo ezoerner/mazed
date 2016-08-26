@@ -1,10 +1,12 @@
 package mazed.app
 
 import com.jme3.app.{DebugKeysAppState, SimpleApplication, StatsAppState}
+import com.jme3.bounding.BoundingVolume
 import com.jme3.bullet.BulletAppState
 import com.jme3.bullet.collision.shapes.CollisionShape
 import com.jme3.bullet.control.{BetterCharacterControl, RigidBodyControl}
 import com.jme3.bullet.util.CollisionShapeFactory
+import com.jme3.collision.CollisionResults
 import com.jme3.input.KeyInput._
 import com.jme3.input.MouseInput
 import com.jme3.input.controls.{ActionListener, AnalogListener, KeyTrigger, MouseAxisTrigger}
@@ -15,7 +17,6 @@ import com.jme3.scene.{CameraNode, Node}
 import com.jme3.system.{AppSettings, JmeContext, JmeSystem}
 import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
-import mazed.state.LockedCamState
 import org.slf4j.LoggerFactory
 import org.slf4j.bridge.SLF4JBridgeHandler
 
@@ -57,6 +58,8 @@ class MazedApp(rand: Random, config: Config)
   private var bulletAppState: BulletAppState = _
   private var player: BetterCharacterControl = _
   private var characterNode: Node = _
+  private var camNode: CameraNode = _
+  private var sceneNode: Node = _
 
   private var leftStrafe = false
   private var rightStrafe = false
@@ -69,12 +72,8 @@ class MazedApp(rand: Random, config: Config)
   private val playerHeight = config.getDouble("player.height").toFloat
   private val normalGravity = new Vector3f(0, -9.81f, 0)
 
-  private val viewDirection: Vector3f = configHelper.getVector3f("player.initialLookAt")
+  private var cameraOffset = configHelper.getVector3f("player.cameraOffset")
 
-/*
-  private var cameraStates: List[AppState] =  _
-  private lazy val cameraStatesIterator = Iterator.continually(cameraStates).flatten
-*/
 
   // override unsatisfactory behavior of superclass:
   // load settings from "registry" even though we've set the settingsDialogImage
@@ -96,6 +95,40 @@ class MazedApp(rand: Random, config: Config)
     initKeys()
   }
 
+  def adjustCameraOffset(): Unit = {
+    // temporarily bring the camera in closer to the player if there's an obstruction in-between
+    val cameraPos = camNode.getLocalTranslation
+    logger.debug(s"camera position=$cameraPos; world pos=${camNode.getWorldTranslation}; cam world rot=${camNode.getWorldRotation}")
+    val distance = cameraPos.length
+    logger.debug(s"distance=$distance")
+    if (distance > 0f) {
+      val results = new CollisionResults
+      val characterBound: BoundingVolume = characterNode.getWorldBound
+      logger.debug(s"charPos=${characterNode.getLocalTranslation}; characterBound=$characterBound")
+      val centerTop = characterBound.getCenter add new Vector3f(0, playerHeight / 2, 0)
+      logger.debug(s"centerTop=$centerTop")
+      val direction = camNode.getWorldTranslation subtract centerTop
+      val ray = new Ray(centerTop, direction.normalize)
+      ray.setLimit(direction.length)
+      logger.debug(s"ray=$ray")
+      sceneNode.getWorldBound.collideWith(ray, results)
+      if (results.size() > 0) {
+        val closest  = results.getClosestCollision
+        val worldContactPoint = closest.getContactPoint
+        logger.debug(s"closest contact point = $worldContactPoint")
+        val newPosition = worldContactPoint subtract camNode.getWorldTranslation
+        logger.debug(s"new camera position=$newPosition")
+/*
+        camNode.setLocalTranslation(newPosition)
+*/
+      } else {
+/*
+        camNode.setLocalTranslation(cameraOffset)
+*/
+      }
+    }
+  }
+
   /**
     * This is the main event loop--walking happens here.
     * We check in which direction the player is walking by interpreting
@@ -104,14 +137,12 @@ class MazedApp(rand: Random, config: Config)
     * We also make sure here that the camera moves with player.
     */
   override def simpleUpdate(tpf: Float): Unit = {
+    adjustCameraOffset()
 
     // Get current forward and left vectors of model by using its rotation
     // to rotate the unit vectors
     val modelForwardDir = characterNode.getWorldRotation.mult(Vector3f.UNIT_Z)
     val modelLeftDir = characterNode.getWorldRotation.mult(Vector3f.UNIT_X)
-
-    // TODO should we get the current direction from the camera or the player?
-    //val camLeft = cam.getLeft.mult(moveSidewaysMult)
 
     val walkDirection = Vector3f.ZERO.clone
     if (leftStrafe) {
@@ -128,56 +159,38 @@ class MazedApp(rand: Random, config: Config)
     }
     player.setWalkDirection(walkDirection)
 
-/*
-    if (!isThirdPersonView) {
-      cam.setLocation(characterNode.getLocalTranslation.add(0, playerHeight, 0))
-    }
-*/
-
-    fpsText.setText("Touch da ground = " + player.isOnGround)
+    fpsText.setText("Ducked = " + player.isDucked)
   }
 
   def onAction(binding: String, isPressed: Boolean, tpf: Float): Unit = {
-    if (binding == "Strafe Left") leftStrafe = isPressed
-    else if (binding == "Strafe Right") rightStrafe = isPressed
-    else if (binding == "Walk Forward") forward = isPressed
-    else if (binding == "Walk Backward") backward = isPressed
-    else if (binding == "Jump") if (isPressed) player.jump()
-    else if (binding == "Duck") player.setDucked(isPressed)
-
-    /*
-        else if (binding == "Toggle Perspective") {
-          if (isPressed) {
-            isThirdPersonView = !isThirdPersonView
-          }
-          flyCam.setEnabled(!isThirdPersonView)
-          camNode.setEnabled(isThirdPersonView)
-        }
-    */
+    if (binding == "Strafe Left") {
+      leftStrafe = isPressed
+    }
+    else if (binding == "Strafe Right") {
+      rightStrafe = isPressed
+    }
+    else if (binding == "Walk Forward") {
+      forward = isPressed
+    }
+    else if (binding == "Walk Backward") {
+      backward = isPressed
+    }
+    else if (binding == "Jump") {
+      if (isPressed) {
+        player.jump()
+      }
+    }
+    else if (binding == "Duck") {
+      player.setDucked(isPressed)
+    }
   }
 
   def rotatePlayer(value: Float, axis: Vector3f) = {
     val rotationSpeed = 1f // make configurable
-
-    val mat: Matrix3f = new Matrix3f
-    mat.fromAngleNormalAxis(rotationSpeed * value, axis)
-
-    val up: Vector3f = Vector3f.ZERO//cam.getUp
-    val left: Vector3f = Vector3f.ZERO//cam.getLeft
-    val dir: Vector3f = player.getViewDirection//cam.getDirection
-
-//    mat.mult(up, up)
-//    mat.mult(left, left)
-    mat.mult(dir, dir)
-
-    val q: Quaternion = new Quaternion
-    q.fromAxes(left, up, dir)
-    q.normalizeLocal
-
-    val rotateL: Quaternion = new Quaternion().fromAngleAxis(FastMath.PI * value, Vector3f.UNIT_Y)
-    rotateL.multLocal(viewDirection)
-
-    player.setViewDirection(viewDirection) //q.getRotationColumn(2))
+    val rotateL: Quaternion = new Quaternion().fromAngleAxis(
+      FastMath.PI * value * rotationSpeed,
+      Vector3f.UNIT_Y)
+    player.setViewDirection(rotateL.mult(player.getViewDirection))
 
   }
 
@@ -194,26 +207,16 @@ class MazedApp(rand: Random, config: Config)
   }
 
   private def initCamera(): Unit = {
-/*
-    val initialLocation = configHelper.getVector3f("player.initialLocation")
-    val initialLookAt = configHelper.getVector3f("player.initialLookAt")
-    // origin of player is at its bottom, translate the camera to the top of player
-    cam.setLocation(initialLocation.add(0, playerHeight, 0))
-    cam.lookAt(initialLookAt, Vector3f.UNIT_Y)
-*/
-    val camNode = new CameraNode("LockedCamNode", cam)
+    camNode = new CameraNode("CamNode", cam)
     camNode.setControlDir(ControlDirection.SpatialToCamera)
     // offset of camera from character
     // TODO make configurable
-    camNode.setLocalTranslation(new Vector3f(0f, 2.8f, -6f))
+    camNode.setLocalTranslation(cameraOffset)
     val quat: Quaternion = new Quaternion
     // These coordinates are local, the camNode is attached to the character node!
     quat.lookAt(Vector3f.UNIT_Z, Vector3f.UNIT_Y)
     camNode.setLocalRotation(quat)
     characterNode.attachChild(camNode)
-
-    val lockedCamState = new LockedCamState(camNode)
-    stateManager.attachAll(lockedCamState)
   }
 
   def initKeys(): Unit = {
@@ -226,7 +229,6 @@ class MazedApp(rand: Random, config: Config)
     inputManager.addMapping("Rotate Right", new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_X, false))
     inputManager.addMapping("Rotate Left", new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_X, true))
 
-    inputManager.addMapping("Toggle Perspective", new KeyTrigger(KEY_F5))
     inputManager
       .addListener(
         this,
@@ -236,16 +238,12 @@ class MazedApp(rand: Random, config: Config)
         "Walk Backward",
         "Jump",
         "Duck",
-        "Toggle Perspective",
         "Rotate Left",
         "Rotate Right")
   }
 
 
   private def initSky(): Unit = {
-    /*
-        viewPort.setBackgroundColor(new ColorRGBA(0.7f, 0.8f, 1f, 1f))
-    */
     rootNode.attachChild(
       SkyFactory.createSky(
         assetManager, "Textures/Sky/Bright/BrightSky.dds", false))
@@ -258,14 +256,13 @@ class MazedApp(rand: Random, config: Config)
     rootNode.addLight(al)
     val dl: DirectionalLight = new DirectionalLight
     dl.setColor(ColorRGBA.White)
-    // TODO what does this directional light do, is it needed with all unshaded materials?
     dl.setDirection(new Vector3f(2.8f, -2.8f, -2.8f).normalizeLocal)
     rootNode.addLight(dl)
   }
 
   private def initScene(): Unit = {
     val (mazeNode, floor) = new MazeSceneBuilder(config, assetManager).build
-    val sceneNode = new Node()
+    sceneNode = new Node()
     sceneNode.attachChild(mazeNode)
     sceneNode.attachChild(floor)
 
@@ -283,6 +280,7 @@ class MazedApp(rand: Random, config: Config)
     val radius = config.getDouble("player.radius").toFloat
     val mass = config.getDouble("player.mass").toFloat
     val initialLocation = configHelper.getVector3f("player.initialLocation")
+    val jumpForce = configHelper.getVector3f("player.jumpForce")
     characterNode = new Node("character node")
 
     characterNode.setLocalTranslation(initialLocation)
@@ -291,8 +289,8 @@ class MazedApp(rand: Random, config: Config)
     characterNode.addControl(player)
     bulletAppState.getPhysicsSpace.add(player)
     player.setGravity(normalGravity)
-    player.setViewDirection(viewDirection)
-    //player.setWalkDirection(initialLookAt)
+    player.setViewDirection(configHelper.getVector3f("player.initialLookAt"))
+    player.setJumpForce(jumpForce)
 
     val characterModel = assetManager.loadModel("Models/Jaime/Jaime.j3o")
     characterModel.setLocalScale(1.4f)
@@ -300,18 +298,4 @@ class MazedApp(rand: Random, config: Config)
 
     rootNode.attachChild(characterNode)
   }
-
-  /*
-  private def initializeLate(lateInit: ⇒ Unit): Unit = {
-    stateManager.attach(
-      new AbstractAppState {
-        override def initialize(stateManager: AppStateManager, app: Application): Unit = {
-          super.initialize(stateManager, app)
-          lateInit
-          stateManager.detach(this)
-        }
-      })
-  }
-*/
-
 }
