@@ -57,24 +57,76 @@ class MazedApp(rand: Random, config: Config)
           with LazyLogging {
 
   private val configHelper = new ConfigHelper(config)
-  private var bulletAppState: BulletAppState = _
-  private var player: BetterCharacterControl = _
-  private var characterNode: Node = _
-  private var camNode: CameraNode = _
-  private var sceneNode: Node = _
-
-  private var leftStrafe = false
-  private var rightStrafe = false
-  private var forward = false
-  private var backward = false
-
   private val moveForwardMult = config.getDouble("player.moveForwardMult").toFloat
   private val moveSidewaysMult = config.getDouble("player.moveSidewaysMult").toFloat
   private val moveBackwardMult = config.getDouble("player.moveBackwardMult").toFloat
   private val playerHeight = config.getDouble("player.height").toFloat
   private val normalGravity = new Vector3f(0, -9.81f, 0)
 
+  private var leftStrafe = false
+  private var rightStrafe = false
+  private var forward = false
+  private var backward = false
+  
+  // offset of camera from character
   private var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+
+  private lazy val bulletAppState = {
+    val bulletState =  new BulletAppState
+    val debugBullet = config.getBoolean("app.debugBullet")
+    bulletState.setDebugEnabled(debugBullet)
+    bulletState
+  }
+
+  private lazy val (player, characterNode): (BetterCharacterControl, Node) = {
+    val radius = config.getDouble("player.radius").toFloat
+    val mass = config.getDouble("player.mass").toFloat
+    val initialLocation = configHelper.getVector3f("player.initialLocation")
+    val jumpForce = configHelper.getVector3f("player.jumpForce")
+    val charNode = new Node("character node")
+
+    charNode.setLocalTranslation(initialLocation)
+
+    val physicsCharacter = new BetterCharacterControl(radius, playerHeight, mass)
+    charNode.addControl(physicsCharacter)
+    bulletAppState.getPhysicsSpace.add(physicsCharacter)
+    physicsCharacter.setGravity(normalGravity)
+    physicsCharacter.setViewDirection(configHelper.getVector3f("player.initialLookAt"))
+    physicsCharacter.setJumpForce(jumpForce)
+
+    val characterModel = assetManager.loadModel("Models/Jaime/Jaime.j3o")
+    characterModel.setLocalScale(1.4f)
+    charNode.attachChild(characterModel)
+
+    (physicsCharacter, charNode)
+  }
+
+
+  private lazy val camNode: CameraNode = {
+    val camera = new CameraNode("CamNode", cam)
+    camera.setControlDir(ControlDirection.SpatialToCamera)
+    camera.setLocalTranslation(cameraOffset)
+    val quat: Quaternion = new Quaternion
+    // These coordinates are local, the camNode is attached to the character node!
+    quat.lookAt(Vector3f.UNIT_Z, Vector3f.UNIT_Y)
+    camera.setLocalRotation(quat)
+    camera
+  }
+
+  private lazy val sceneNode: Node = {
+    val (mazeNode, floor) = new MazeSceneBuilder(config, assetManager).build
+    val scene = new Node()
+    scene.attachChild(mazeNode)
+    scene.attachChild(floor)
+
+    // We set up collision detection for the scene by creating a
+    // compound collision shape and a static RigidBodyControl with mass zero.
+    val sceneShape: CollisionShape = CollisionShapeFactory.createMeshShape(scene)
+    val landscape = new RigidBodyControl(sceneShape, 0)
+    scene.addControl(landscape)
+    bulletAppState.getPhysicsSpace.add(landscape)
+    scene
+  }
 
 
   // override unsatisfactory behavior of superclass:
@@ -88,16 +140,17 @@ class MazedApp(rand: Random, config: Config)
 
   override def simpleInitApp(): Unit = {
     inputManager.setCursorVisible(false)
-    initPhysics()
+    stateManager.attach(bulletAppState)
     initSky()
     initLight()
-    initScene()
-    initPlayer()
-    initCamera()
+    rootNode.attachChild(sceneNode)
+    rootNode.attachChild(characterNode)
+    characterNode.attachChild(camNode)
     initKeys()
   }
 
-  def adjustCameraOffset(): Unit = {
+  // work in progress
+  private def adjustCameraOffset(): Unit = {
     // temporarily bring the camera in closer to the player if there's an obstruction in-between
     val cameraPos = camNode.getLocalTranslation
     logger.debug(s"camera position=$cameraPos; world pos=${camNode.getWorldTranslation}; cam world rot=${camNode.getWorldRotation}")
@@ -201,26 +254,6 @@ class MazedApp(rand: Random, config: Config)
     else if (name.equals("Rotate Right")) rotatePlayer(-value, Vector3f.UNIT_Y)
   }
 
-  private def initPhysics() = {
-    bulletAppState = new BulletAppState
-    stateManager.attach(bulletAppState)
-    val debugBullet = config.getBoolean("app.debugBullet")
-    bulletAppState.setDebugEnabled(debugBullet)
-  }
-
-  private def initCamera(): Unit = {
-    camNode = new CameraNode("CamNode", cam)
-    camNode.setControlDir(ControlDirection.SpatialToCamera)
-    // offset of camera from character
-    // TODO make configurable
-    camNode.setLocalTranslation(cameraOffset)
-    val quat: Quaternion = new Quaternion
-    // These coordinates are local, the camNode is attached to the character node!
-    quat.lookAt(Vector3f.UNIT_Z, Vector3f.UNIT_Y)
-    camNode.setLocalRotation(quat)
-    characterNode.attachChild(camNode)
-  }
-
   def initKeys(): Unit = {
     inputManager.addMapping("Strafe Left", new KeyTrigger(KEY_A))
     inputManager.addMapping("Strafe Right", new KeyTrigger(KEY_D))
@@ -260,44 +293,5 @@ class MazedApp(rand: Random, config: Config)
     dl.setColor(ColorRGBA.White)
     dl.setDirection(new Vector3f(2.8f, -2.8f, -2.8f).normalizeLocal)
     rootNode.addLight(dl)
-  }
-
-  private def initScene(): Unit = {
-    val (mazeNode, floor) = new MazeSceneBuilder(config, assetManager).build
-    sceneNode = new Node()
-    sceneNode.attachChild(mazeNode)
-    sceneNode.attachChild(floor)
-
-    // We set up collision detection for the scene by creating a
-    // compound collision shape and a static RigidBodyControl with mass zero.
-    val sceneShape: CollisionShape = CollisionShapeFactory.createMeshShape(sceneNode)
-    val landscape = new RigidBodyControl(sceneShape, 0)
-    sceneNode.addControl(landscape)
-    rootNode.attachChild(sceneNode)
-    bulletAppState.getPhysicsSpace.add(landscape)
-  }
-
-  private def initPlayer(): Unit = {
-
-    val radius = config.getDouble("player.radius").toFloat
-    val mass = config.getDouble("player.mass").toFloat
-    val initialLocation = configHelper.getVector3f("player.initialLocation")
-    val jumpForce = configHelper.getVector3f("player.jumpForce")
-    characterNode = new Node("character node")
-
-    characterNode.setLocalTranslation(initialLocation)
-
-    player = new BetterCharacterControl(radius, playerHeight, mass)
-    characterNode.addControl(player)
-    bulletAppState.getPhysicsSpace.add(player)
-    player.setGravity(normalGravity)
-    player.setViewDirection(configHelper.getVector3f("player.initialLookAt"))
-    player.setJumpForce(jumpForce)
-
-    val characterModel = assetManager.loadModel("Models/Jaime/Jaime.j3o")
-    characterModel.setLocalScale(1.4f)
-    characterNode.attachChild(characterModel)
-
-    rootNode.attachChild(characterNode)
   }
 }
