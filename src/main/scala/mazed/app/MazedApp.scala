@@ -10,6 +10,8 @@ import com.jme3.input.KeyInput._
 import com.jme3.input.MouseInput
 import com.jme3.input.controls.{ActionListener, AnalogListener, KeyTrigger, MouseAxisTrigger}
 import com.jme3.light.{AmbientLight, DirectionalLight}
+import com.jme3.math.FastMath.PI
+import com.jme3.math.Vector3f.{UNIT_X, UNIT_Y, UNIT_Z}
 import com.jme3.math._
 import com.jme3.scene.control.CameraControl.ControlDirection
 import com.jme3.scene.{CameraNode, Node}
@@ -50,18 +52,29 @@ object MazedApp {
 }
 
 class MazedApp(rand: Random, config: Config)
-  extends SimpleApplication(new StatsAppState, new DebugKeysAppState)
+  extends SimpleApplication(new DebugKeysAppState)
           with ActionListener
           with AnalogListener
           with LazyLogging {
+  private val StrafeLeft = "Strafe Left"
+  private val StrafeRight = "Strafe Right"
+  private val WalkForward = "Walk Forward"
+  private val WalkBackward = "Walk Backward"
+  private val RotateRight = "Rotate Right"
+  private val RotateLeft = "Rotate Left"
+  private val RotateUp = "Rotate Up"
+  private val RotateDown = "Rotate Down"
+  private val Jump = "Jump"
+  private val Duck = "Duck"
 
   private val configHelper = new ConfigHelper(config)
-  private val moveForwardMult = config.getDouble("player.moveForwardMult").toFloat
-  private val moveSidewaysMult = config.getDouble("player.moveSidewaysMult").toFloat
-  private val moveBackwardMult = config.getDouble("player.moveBackwardMult").toFloat
+  private val moveForwardSpeed = config.getDouble("player.moveForwardSpeed").toFloat
+  private val moveSidewaysSpeed = config.getDouble("player.moveSidewaysSpeed").toFloat
+  private val moveBackwardSpeed = config.getDouble("player.moveBackwardSpeed").toFloat
+  private val lookVerticalSpeed = config.getDouble("player.lookVerticalSpeed").toFloat
+  private val rotateSpeed = config.getDouble("player.rotateSpeed").toFloat
   private val playerHeight = config.getDouble("player.height").toFloat
   private val playerRadius = config.getDouble("player.radius").toFloat
-  private val normalGravity = new Vector3f(0, -9.81f, 0)
 
   private var leftStrafe = false
   private var rightStrafe = false
@@ -91,13 +104,18 @@ class MazedApp(rand: Random, config: Config)
     val physicsCharacter = new BetterCharacterControl(playerRadius, playerHeight, mass)
     charNode.addControl(physicsCharacter)
     bulletAppState.getPhysicsSpace.add(physicsCharacter)
-    physicsCharacter.setGravity(normalGravity)
+    val gravity = configHelper.getVector3f("player.gravity")
+    physicsCharacter.setGravity(gravity)
     physicsCharacter.setViewDirection(configHelper.getVector3f("player.initialLookAt"))
     physicsCharacter.setJumpForce(jumpForce)
 
-    val characterModel = assetManager.loadModel("Models/Jaime/Jaime.j3o")
-    characterModel.setLocalScale(1.4f)
-    charNode.attachChild(characterModel)
+    val maybeModel = configHelper.getOptionalString("player.model")
+    maybeModel foreach { model ⇒
+      val scale = config.getDouble("player.modelScale").toFloat
+      val characterModel = assetManager.loadModel(model)
+      characterModel.setLocalScale(scale)
+      charNode.attachChild(characterModel)
+    }
 
     (physicsCharacter, charNode)
   }
@@ -107,13 +125,11 @@ class MazedApp(rand: Random, config: Config)
     val cameraNode = new CameraNode("CamNode", cam)
     cameraNode.setControlDir(ControlDirection.SpatialToCamera)
     cameraNode.setLocalTranslation(cameraOffset)
-/*
-camera is already rotated in this direction
     val quat: Quaternion = new Quaternion
-    // These coordinates are local, the camNode is attached to the character node!
-    quat.lookAt(Vector3f.UNIT_Z, Vector3f.UNIT_Y)
-    camera.setLocalRotation(quat)
-*/
+    val cameraLookAt = configHelper.getVector3f("player.cameraLookAt")
+    quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
+    cameraNode.setLocalRotation(quat)
+
     cameraNode
   }
 
@@ -145,8 +161,14 @@ camera is already rotated in this direction
   override def simpleInitApp(): Unit = {
     inputManager.setCursorVisible(false)
     stateManager.attach(bulletAppState)
+
     val debugBullet = config.getBoolean("app.debugBullet")
     bulletAppState.setDebugEnabled(debugBullet)
+
+    val enableFpsText = config.getBoolean("app.enableFpsText")
+    if (enableFpsText) {
+      stateManager.attach(new StatsAppState)
+    }
 
     initSky()
     initLight()
@@ -158,16 +180,17 @@ camera is already rotated in this direction
 
   var firstTime = true
   // temporarily bring the camera in closer to the player if there's an obstruction in-between
-  private def handleCameraCollisions(): Unit = {
+  private def adjustCamera(): Unit = {
     if (firstTime) { // the scene isn't full baked on the first frame
       firstTime = false
       return
     }
+
     var cameraAdjusted = false
     logger.debug(s"cameraOffset=$cameraOffset")
     logger.debug(s"characterPos=${characterNode.getWorldTranslation}")
-    val targetCameraPos = characterNode.localToWorld(cameraOffset, new Vector3f)
     // use a 90% fudge factor to simulate distance from top of head to eyes
+    val targetCameraPos = characterNode.localToWorld(cameraOffset add (0, playerFinalHeight * 0.9f, 0), new Vector3f)
     val topOfHead = characterNode.getWorldTranslation.add(0, playerFinalHeight * 0.9f, 0)
     if (topOfHead == targetCameraPos) {
       return // first person mode(?)
@@ -216,98 +239,113 @@ camera is already rotated in this direction
     * We also make sure here that the camera moves with player.
     */
   override def simpleUpdate(tpf: Float): Unit = {
-    handleCameraCollisions()
+    adjustCamera()
 
     // Get current forward and left vectors of model by using its rotation
     // to rotate the unit vectors
-    val modelForwardDir = characterNode.getWorldRotation.mult(Vector3f.UNIT_Z)
-    val modelLeftDir = characterNode.getWorldRotation.mult(Vector3f.UNIT_X)
+    val modelForwardDir = characterNode.getWorldRotation.mult(UNIT_Z)
+    val modelLeftDir = characterNode.getWorldRotation.mult(UNIT_X)
 
     val walkDirection = Vector3f.ZERO.clone
     if (leftStrafe) {
-      walkDirection.addLocal(modelLeftDir.mult(moveSidewaysMult))
+      walkDirection.addLocal(modelLeftDir mult moveSidewaysSpeed)
     }
     if (rightStrafe) {
-      walkDirection.addLocal(modelLeftDir.negate.mult(moveSidewaysMult))
+      walkDirection.addLocal(modelLeftDir.negate.mult(moveSidewaysSpeed))
     }
     if (forward) {
-      walkDirection.addLocal(modelForwardDir.mult(moveForwardMult))
+      walkDirection.addLocal(modelForwardDir mult moveForwardSpeed)
     }
     if (backward) {
-      walkDirection.addLocal(modelForwardDir.negate.mult(moveBackwardMult))
+      walkDirection.addLocal(modelForwardDir.negate mult moveBackwardSpeed)
     }
     player.setWalkDirection(walkDirection)
   }
 
   override def onAction(binding: String, isPressed: Boolean, tpf: Float): Unit = {
-    if (binding == "Strafe Left") {
+    if (binding == StrafeLeft) {
       leftStrafe = isPressed
     }
-    else if (binding == "Strafe Right") {
+    else if (binding == StrafeRight) {
       rightStrafe = isPressed
     }
-    else if (binding == "Walk Forward") {
+    else if (binding == WalkForward) {
       forward = isPressed
     }
-    else if (binding == "Walk Backward") {
+    else if (binding == WalkBackward) {
       backward = isPressed
     }
-    else if (binding == "Jump") {
+    else if (binding == Jump) {
       if (isPressed) {
         player.jump()
       }
     }
-    else if (binding == "Duck") {
+    else if (binding == Duck) {
       player.setDucked(isPressed)
     }
+  }
+
+  override def onAnalog(name: String, value: Float, tpf: Float): Unit =
+    name match {
+      case RotateLeft ⇒ rotatePlayer(value, UNIT_Y)
+      case RotateRight ⇒ rotatePlayer(-value, UNIT_Y)
+      case RotateUp ⇒ rotateCamera(-value, UNIT_X)
+      case RotateDown ⇒ rotateCamera(value, UNIT_X)
+      case _ ⇒
+    }
+
+  private def rotatePlayer(value: Float, axis: Vector3f) = {
+    val rotation = new Quaternion().fromAngleAxis(PI * value * rotateSpeed, axis)
+    player.setViewDirection(rotation mult player.getViewDirection)
+  }
+
+
+  def rotateCamera(value: Float, axis: Vector3f): Unit = {
+    val rotation = new Quaternion().fromAngleAxis(PI * value * lookVerticalSpeed, axis)
+    camNode.setLocalRotation(rotation mult camNode.getLocalRotation)
   }
 
   private def setCamWorldPosition(worldPosition: Vector3f): Unit = {
     camNode.setLocalTranslation(characterNode.worldToLocal(worldPosition, new Vector3f))
   }
 
-  private def rotatePlayer(value: Float, axis: Vector3f) = {
-    val rotationSpeed = 1f // make configurable
-    val rotateL: Quaternion = new Quaternion().fromAngleAxis(
-      FastMath.PI * value * rotationSpeed,
-      Vector3f.UNIT_Y)
-    player.setViewDirection(rotateL.mult(player.getViewDirection))
-
-  }
-
-  override def onAnalog(name: String, value: Float, tpf: Float): Unit = {
-    if (name == "Rotate Left") rotatePlayer(value, Vector3f.UNIT_Y)
-    else if (name.equals("Rotate Right")) rotatePlayer(-value, Vector3f.UNIT_Y)
-  }
-
   private def initKeys(): Unit = {
-    inputManager.addMapping("Strafe Left", new KeyTrigger(KEY_A))
-    inputManager.addMapping("Strafe Right", new KeyTrigger(KEY_D))
-    inputManager.addMapping("Walk Forward", new KeyTrigger(KEY_W))
-    inputManager.addMapping("Walk Backward", new KeyTrigger(KEY_S))
-    inputManager.addMapping("Jump", new KeyTrigger(KEY_SPACE))
-    inputManager.addMapping("Duck", new KeyTrigger(KEY_LSHIFT), new KeyTrigger(KEY_RSHIFT))
-    inputManager.addMapping("Rotate Right", new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_X, false))
-    inputManager.addMapping("Rotate Left", new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_X, true))
+    inputManager.addMapping(StrafeLeft, new KeyTrigger(KEY_A))
+    inputManager.addMapping(StrafeRight, new KeyTrigger(KEY_D))
+    inputManager.addMapping(WalkForward, new KeyTrigger(KEY_W))
+    inputManager.addMapping(WalkBackward, new KeyTrigger(KEY_S))
+    inputManager.addMapping(Jump, new KeyTrigger(KEY_SPACE))
+    inputManager.addMapping(Duck, new KeyTrigger(KEY_LSHIFT), new KeyTrigger(KEY_RSHIFT))
+    inputManager.addMapping(RotateRight, new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_X, false))
+    inputManager.addMapping(RotateLeft, new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_X, true))
+    inputManager.addMapping(RotateUp, new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_Y, false))
+    inputManager.addMapping(RotateDown, new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_Y, true))
 
     inputManager
       .addListener(
         this,
-        "Strafe Left",
-        "Strafe Right",
-        "Walk Forward",
-        "Walk Backward",
-        "Jump",
-        "Duck",
-        "Rotate Left",
-        "Rotate Right")
+        StrafeLeft,
+        StrafeRight,
+        WalkForward,
+        WalkBackward,
+        Jump,
+        Duck,
+        RotateLeft,
+        RotateRight,
+        RotateUp,
+        RotateDown)
   }
 
 
   private def initSky(): Unit = {
-    rootNode.attachChild(
-      SkyFactory.createSky(
-        assetManager, "Textures/Sky/Bright/BrightSky.dds", false))
+    val skyTexture = configHelper.getOptionalString("maze.sky.texture")
+    val skyColor = configHelper.getOptionalColor("maze.sky.color")
+    skyTexture foreach { tx ⇒
+      rootNode.attachChild(SkyFactory.createSky(assetManager, tx, false))
+    }
+    skyColor foreach { color ⇒
+      viewPort.setBackgroundColor(color)
+    }
   }
 
   private def initLight(): Unit = {
