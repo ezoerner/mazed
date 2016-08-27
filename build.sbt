@@ -9,6 +9,7 @@ resolvers += Resolver.bintrayRepo("jmonkeyengine", "com.jme3")
 libraryDependencies ++= Seq(
   "com.typesafe" % "config" % "1.3.0") ++ jME3Dependencies ++ logging
 
+mainClass in (Compile, run) := Some("mazed.app.MazedApp")
 mainClass in assembly := Some("mazed.app.MazedApp")
 
 lazy val jME3Dependencies = Seq(
