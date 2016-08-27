@@ -1,7 +1,6 @@
 package mazed.app
 
-import com.jme3.app.{DebugKeysAppState, SimpleApplication, StatsAppState}
-import com.jme3.bounding.BoundingVolume
+import com.jme3.app.{SimpleApplication, StatsAppState}
 import com.jme3.bullet.BulletAppState
 import com.jme3.bullet.collision.shapes.CollisionShape
 import com.jme3.bullet.control.{BetterCharacterControl, RigidBodyControl}
@@ -61,25 +60,27 @@ class MazedApp(rand: Random, config: Config)
   private val moveSidewaysMult = config.getDouble("player.moveSidewaysMult").toFloat
   private val moveBackwardMult = config.getDouble("player.moveBackwardMult").toFloat
   private val playerHeight = config.getDouble("player.height").toFloat
+  private val playerRadius = config.getDouble("player.radius").toFloat
   private val normalGravity = new Vector3f(0, -9.81f, 0)
 
   private var leftStrafe = false
   private var rightStrafe = false
   private var forward = false
   private var backward = false
-  
+
   // offset of camera from character
-  private var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+  private[app] var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+
+  private[app] def playerFinalHeight: Float = {
+    playerHeight * (if (player.isDucked) player.getDuckedFactor else 1f)
+  }
 
   private lazy val bulletAppState = {
     val bulletState =  new BulletAppState
-    val debugBullet = config.getBoolean("app.debugBullet")
-    bulletState.setDebugEnabled(debugBullet)
     bulletState
   }
 
-  private lazy val (player, characterNode): (BetterCharacterControl, Node) = {
-    val radius = config.getDouble("player.radius").toFloat
+  private[app] lazy val (player, characterNode): (BetterCharacterControl, Node) = {
     val mass = config.getDouble("player.mass").toFloat
     val initialLocation = configHelper.getVector3f("player.initialLocation")
     val jumpForce = configHelper.getVector3f("player.jumpForce")
@@ -87,7 +88,7 @@ class MazedApp(rand: Random, config: Config)
 
     charNode.setLocalTranslation(initialLocation)
 
-    val physicsCharacter = new BetterCharacterControl(radius, playerHeight, mass)
+    val physicsCharacter = new BetterCharacterControl(playerRadius, playerHeight, mass)
     charNode.addControl(physicsCharacter)
     bulletAppState.getPhysicsSpace.add(physicsCharacter)
     physicsCharacter.setGravity(normalGravity)
@@ -102,18 +103,21 @@ class MazedApp(rand: Random, config: Config)
   }
 
 
-  private lazy val camNode: CameraNode = {
-    val camera = new CameraNode("CamNode", cam)
-    camera.setControlDir(ControlDirection.SpatialToCamera)
-    camera.setLocalTranslation(cameraOffset)
+  private[app] lazy val camNode: CameraNode = {
+    val cameraNode = new CameraNode("CamNode", cam)
+    cameraNode.setControlDir(ControlDirection.SpatialToCamera)
+    cameraNode.setLocalTranslation(cameraOffset)
+/*
+camera is already rotated in this direction
     val quat: Quaternion = new Quaternion
     // These coordinates are local, the camNode is attached to the character node!
     quat.lookAt(Vector3f.UNIT_Z, Vector3f.UNIT_Y)
     camera.setLocalRotation(quat)
-    camera
+*/
+    cameraNode
   }
 
-  private lazy val sceneNode: Node = {
+  private[app] lazy val sceneNode: Node = {
     val (mazeNode, floor) = new MazeSceneBuilder(config, assetManager).build
     val scene = new Node()
     scene.attachChild(mazeNode)
@@ -141,6 +145,9 @@ class MazedApp(rand: Random, config: Config)
   override def simpleInitApp(): Unit = {
     inputManager.setCursorVisible(false)
     stateManager.attach(bulletAppState)
+    val debugBullet = config.getBoolean("app.debugBullet")
+    bulletAppState.setDebugEnabled(debugBullet)
+
     initSky()
     initLight()
     rootNode.attachChild(sceneNode)
@@ -149,39 +156,56 @@ class MazedApp(rand: Random, config: Config)
     initKeys()
   }
 
-  // work in progress
-  private def adjustCameraOffset(): Unit = {
-    // temporarily bring the camera in closer to the player if there's an obstruction in-between
-    val cameraPos = camNode.getLocalTranslation
-    logger.debug(s"camera position=$cameraPos; world pos=${camNode.getWorldTranslation}; cam world rot=${camNode.getWorldRotation}")
-    val distance = cameraPos.length
-    logger.debug(s"distance=$distance")
-    if (distance > 0f) {
+  var firstTime = true
+  // temporarily bring the camera in closer to the player if there's an obstruction in-between
+  private def handleCameraCollisions(): Unit = {
+    if (firstTime) { // the scene isn't full baked on the first frame
+      firstTime = false
+      return
+    }
+    var cameraAdjusted = false
+    logger.debug(s"cameraOffset=$cameraOffset")
+    logger.debug(s"characterPos=${characterNode.getWorldTranslation}")
+    val targetCameraPos = characterNode.localToWorld(cameraOffset, new Vector3f)
+    // use a 90% fudge factor to simulate distance from top of head to eyes
+    val topOfHead = characterNode.getWorldTranslation.add(0, playerFinalHeight * 0.9f, 0)
+    if (topOfHead == targetCameraPos) {
+      return // first person mode(?)
+    }
+
+    logger.debug(s"targetCameraPos=$targetCameraPos")
+    logger.debug(s"topOfHead=$topOfHead")
+
+    val distance = targetCameraPos distance topOfHead
+    val directionTowardsCamera = targetCameraPos subtract topOfHead
+    val normalizedDirection = directionTowardsCamera.normalize
+
+    logger.debug(s"directionTowardsCamera=$directionTowardsCamera")
+
+    if (distance <= playerRadius) {
+      // first person view
+      setCamWorldPosition(topOfHead)
+      cameraAdjusted = true
+    }
+    else {
       val results = new CollisionResults
-      val characterBound: BoundingVolume = characterNode.getWorldBound
-      logger.debug(s"charPos=${characterNode.getLocalTranslation}; characterBound=$characterBound")
-      val centerTop = characterBound.getCenter add new Vector3f(0, playerHeight / 2, 0)
-      logger.debug(s"centerTop=$centerTop")
-      val direction = camNode.getWorldTranslation subtract centerTop
-      val ray = new Ray(centerTop, direction.normalize)
-      ray.setLimit(direction.length)
-      logger.debug(s"ray=$ray")
-      sceneNode.getWorldBound.collideWith(ray, results)
-      if (results.size() > 0) {
+      val ray = new Ray(topOfHead, normalizedDirection)
+      ray.setLimit(distance)
+      logger.debug(s"ray=$ray; limit=$distance")
+      sceneNode.collideWith(ray, results)
+      val isCollision = results.size > 0
+      if (isCollision) {
         val closest  = results.getClosestCollision
         val worldContactPoint = closest.getContactPoint
-        logger.debug(s"closest contact point = $worldContactPoint")
-        val newPosition = worldContactPoint subtract camNode.getWorldTranslation
-        logger.debug(s"new camera position=$newPosition")
-/*
-        camNode.setLocalTranslation(newPosition)
-*/
-      } else {
-/*
-        camNode.setLocalTranslation(cameraOffset)
-*/
+        logger.debug(s"worldContactPoint = $worldContactPoint")
+        setCamWorldPosition(worldContactPoint)
+        cameraAdjusted = true
       }
     }
+    if (!cameraAdjusted) {
+      setCamWorldPosition(targetCameraPos)
+    }
+    logger.debug(s"-----------")
   }
 
   /**
@@ -192,7 +216,7 @@ class MazedApp(rand: Random, config: Config)
     * We also make sure here that the camera moves with player.
     */
   override def simpleUpdate(tpf: Float): Unit = {
-    adjustCameraOffset()
+    handleCameraCollisions()
 
     // Get current forward and left vectors of model by using its rotation
     // to rotate the unit vectors
@@ -213,11 +237,9 @@ class MazedApp(rand: Random, config: Config)
       walkDirection.addLocal(modelForwardDir.negate.mult(moveBackwardMult))
     }
     player.setWalkDirection(walkDirection)
-
-    fpsText.setText("Ducked = " + player.isDucked)
   }
 
-  def onAction(binding: String, isPressed: Boolean, tpf: Float): Unit = {
+  override def onAction(binding: String, isPressed: Boolean, tpf: Float): Unit = {
     if (binding == "Strafe Left") {
       leftStrafe = isPressed
     }
@@ -240,7 +262,11 @@ class MazedApp(rand: Random, config: Config)
     }
   }
 
-  def rotatePlayer(value: Float, axis: Vector3f) = {
+  private def setCamWorldPosition(worldPosition: Vector3f): Unit = {
+    camNode.setLocalTranslation(characterNode.worldToLocal(worldPosition, new Vector3f))
+  }
+
+  private def rotatePlayer(value: Float, axis: Vector3f) = {
     val rotationSpeed = 1f // make configurable
     val rotateL: Quaternion = new Quaternion().fromAngleAxis(
       FastMath.PI * value * rotationSpeed,
@@ -249,12 +275,12 @@ class MazedApp(rand: Random, config: Config)
 
   }
 
-  def onAnalog(name: String, value: Float, tpf: Float): Unit = {
+  override def onAnalog(name: String, value: Float, tpf: Float): Unit = {
     if (name == "Rotate Left") rotatePlayer(value, Vector3f.UNIT_Y)
     else if (name.equals("Rotate Right")) rotatePlayer(-value, Vector3f.UNIT_Y)
   }
 
-  def initKeys(): Unit = {
+  private def initKeys(): Unit = {
     inputManager.addMapping("Strafe Left", new KeyTrigger(KEY_A))
     inputManager.addMapping("Strafe Right", new KeyTrigger(KEY_D))
     inputManager.addMapping("Walk Forward", new KeyTrigger(KEY_W))
