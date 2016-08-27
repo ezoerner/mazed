@@ -7,7 +7,7 @@ import com.jme3.bullet.control.{BetterCharacterControl, RigidBodyControl}
 import com.jme3.bullet.util.CollisionShapeFactory
 import com.jme3.collision.CollisionResults
 import com.jme3.input.KeyInput._
-import com.jme3.input.MouseInput
+import com.jme3.input.MouseInput._
 import com.jme3.input.controls.{ActionListener, AnalogListener, KeyTrigger, MouseAxisTrigger}
 import com.jme3.light.{AmbientLight, DirectionalLight}
 import com.jme3.math.FastMath.PI
@@ -56,16 +56,18 @@ class MazedApp(rand: Random, config: Config)
           with ActionListener
           with AnalogListener
           with LazyLogging {
-  private val StrafeLeft = "Strafe Left"
-  private val StrafeRight = "Strafe Right"
-  private val WalkForward = "Walk Forward"
-  private val WalkBackward = "Walk Backward"
-  private val RotateRight = "Rotate Right"
-  private val RotateLeft = "Rotate Left"
-  private val RotateUp = "Rotate Up"
-  private val RotateDown = "Rotate Down"
+  private val StrafeLeft = "StrafeLeft"
+  private val StrafeRight = "StrafeRight"
+  private val WalkForward = "WalkForward"
+  private val WalkBackward = "WalkBackward"
+  private val RotateRight = "RotateRight"
+  private val RotateLeft = "RotateLeft"
+  private val RotateUp = "RotateUp"
+  private val RotateDown = "RotateDown"
   private val Jump = "Jump"
   private val Duck = "Duck"
+  val MoveCameraIn = "MoveCameraIn"
+  val MoveCameraOut = "MoveCameraOut"
 
   private val configHelper = new ConfigHelper(config)
   private val moveForwardSpeed = config.getDouble("player.moveForwardSpeed").toFloat
@@ -73,8 +75,11 @@ class MazedApp(rand: Random, config: Config)
   private val moveBackwardSpeed = config.getDouble("player.moveBackwardSpeed").toFloat
   private val lookVerticalSpeed = config.getDouble("player.lookVerticalSpeed").toFloat
   private val rotateSpeed = config.getDouble("player.rotateSpeed").toFloat
+  private val moveCameraSpeed = config.getDouble("player.moveCameraSpeed").toFloat
   private val playerHeight = config.getDouble("player.height").toFloat
   private val playerRadius = config.getDouble("player.radius").toFloat
+  private val maxCamDistance =  config.getDouble("player.maxCameraDistance").toFloat
+  private val minCamDistance =  config.getDouble("player.minCameraDistance").toFloat
 
   private var leftStrafe = false
   private var rightStrafe = false
@@ -83,6 +88,9 @@ class MazedApp(rand: Random, config: Config)
 
   // offset of camera from character
   private[app] var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+
+  // the camera angle never changes
+  private val cameraAngle = cameraOffset.normalize
 
   private[app] def playerFinalHeight: Float = {
     playerHeight * (if (player.isDucked) player.getDuckedFactor else 1f)
@@ -188,7 +196,7 @@ class MazedApp(rand: Random, config: Config)
 
     var cameraAdjusted = false
     logger.debug(s"cameraOffset=$cameraOffset")
-    logger.debug(s"characterPos=${characterNode.getWorldTranslation}")
+    logger.trace(s"characterPos=${characterNode.getWorldTranslation}")
     // use a 90% fudge factor to simulate distance from top of head to eyes
     val targetCameraPos = characterNode.localToWorld(cameraOffset add (0, playerFinalHeight * 0.9f, 0), new Vector3f)
     val topOfHead = characterNode.getWorldTranslation.add(0, playerFinalHeight * 0.9f, 0)
@@ -196,16 +204,16 @@ class MazedApp(rand: Random, config: Config)
       return // first person mode(?)
     }
 
-    logger.debug(s"targetCameraPos=$targetCameraPos")
-    logger.debug(s"topOfHead=$topOfHead")
+    logger.trace(s"targetCameraPos=$targetCameraPos")
+    logger.trace(s"topOfHead=$topOfHead")
 
     val distance = targetCameraPos distance topOfHead
     val directionTowardsCamera = targetCameraPos subtract topOfHead
     val normalizedDirection = directionTowardsCamera.normalize
 
-    logger.debug(s"directionTowardsCamera=$directionTowardsCamera")
+    logger.trace(s"directionTowardsCamera=$directionTowardsCamera")
 
-    if (distance <= playerRadius) {
+    if (distance <= minCamDistance) {
       // first person view
       setCamWorldPosition(topOfHead)
       cameraAdjusted = true
@@ -214,21 +222,27 @@ class MazedApp(rand: Random, config: Config)
       val results = new CollisionResults
       val ray = new Ray(topOfHead, normalizedDirection)
       ray.setLimit(distance)
-      logger.debug(s"ray=$ray; limit=$distance")
+      logger.trace(s"ray=$ray; limit=$distance")
       sceneNode.collideWith(ray, results)
       val isCollision = results.size > 0
       if (isCollision) {
         val closest  = results.getClosestCollision
         val worldContactPoint = closest.getContactPoint
-        logger.debug(s"worldContactPoint = $worldContactPoint")
-        setCamWorldPosition(worldContactPoint)
+        logger.trace(s"worldContactPoint = $worldContactPoint")
+        val newDistance = worldContactPoint distance topOfHead
+        if (newDistance <= minCamDistance) {
+          setCamWorldPosition(topOfHead)
+        }
+        else {
+          setCamWorldPosition(worldContactPoint)
+        }
         cameraAdjusted = true
       }
     }
     if (!cameraAdjusted) {
       setCamWorldPosition(targetCameraPos)
     }
-    logger.debug(s"-----------")
+    logger.trace(s"-----------")
   }
 
   /**
@@ -291,6 +305,8 @@ class MazedApp(rand: Random, config: Config)
       case RotateRight ⇒ rotatePlayer(-value, UNIT_Y)
       case RotateUp ⇒ rotateCamera(-value, UNIT_X)
       case RotateDown ⇒ rotateCamera(value, UNIT_X)
+      case MoveCameraIn ⇒ moveCamera(-value)
+      case MoveCameraOut ⇒ moveCamera(value)
       case _ ⇒
     }
 
@@ -305,6 +321,14 @@ class MazedApp(rand: Random, config: Config)
     camNode.setLocalRotation(rotation mult camNode.getLocalRotation)
   }
 
+  def  moveCamera(value: Float): Unit = {
+    logger.debug(s"mouse axis value = $value")
+    val d = (cameraOffset.length + value * moveCameraSpeed) max 0 min maxCamDistance
+    val newDistance = if (d < minCamDistance) 0f else d
+    logger.debug(s"newDistance=$newDistance")
+    cameraOffset = cameraAngle mult newDistance
+  }
+
   private def setCamWorldPosition(worldPosition: Vector3f): Unit = {
     camNode.setLocalTranslation(characterNode.worldToLocal(worldPosition, new Vector3f))
   }
@@ -316,10 +340,12 @@ class MazedApp(rand: Random, config: Config)
     inputManager.addMapping(WalkBackward, new KeyTrigger(KEY_S))
     inputManager.addMapping(Jump, new KeyTrigger(KEY_SPACE))
     inputManager.addMapping(Duck, new KeyTrigger(KEY_LSHIFT), new KeyTrigger(KEY_RSHIFT))
-    inputManager.addMapping(RotateRight, new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_X, false))
-    inputManager.addMapping(RotateLeft, new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_X, true))
-    inputManager.addMapping(RotateUp, new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(MouseInput.AXIS_Y, false))
-    inputManager.addMapping(RotateDown, new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(MouseInput.AXIS_Y, true))
+    inputManager.addMapping(RotateRight, new KeyTrigger(KEY_RIGHT), new MouseAxisTrigger(AXIS_X, false))
+    inputManager.addMapping(RotateLeft, new KeyTrigger(KEY_LEFT), new MouseAxisTrigger(AXIS_X, true))
+    inputManager.addMapping(RotateUp, new KeyTrigger(KEY_UP), new MouseAxisTrigger(AXIS_Y, false))
+    inputManager.addMapping(RotateDown, new KeyTrigger(KEY_DOWN), new MouseAxisTrigger(AXIS_Y, true))
+    inputManager.addMapping(MoveCameraIn, new MouseAxisTrigger(AXIS_WHEEL, true))
+    inputManager.addMapping(MoveCameraOut, new MouseAxisTrigger(AXIS_WHEEL, false))
 
     inputManager
       .addListener(
@@ -333,7 +359,9 @@ class MazedApp(rand: Random, config: Config)
         RotateLeft,
         RotateRight,
         RotateUp,
-        RotateDown)
+        RotateDown,
+        MoveCameraIn,
+        MoveCameraOut)
   }
 
 
