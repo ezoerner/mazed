@@ -1,0 +1,4 @@
+First pre-release of Mazed game.
+
+Randomly generates a 3D maze. The goal is for the player to exit the maze.
+Supports first and third person views.

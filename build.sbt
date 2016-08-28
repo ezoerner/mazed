@@ -1,8 +1,9 @@
+import sbtrelease.ReleasePlugin.autoImport.ReleaseKeys._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
+
 name := "mazed"
-
-version := "0.2.9-SNAPSHOT"
-
 scalaVersion := "2.11.8"
+organization := "ezoerner"
 
 resolvers += Resolver.bintrayRepo("jmonkeyengine", "com.jme3")
 
@@ -11,6 +12,13 @@ libraryDependencies ++= Seq(
 
 mainClass in (Compile, run) := Some("mazed.app.MazedApp")
 mainClass in assembly := Some("mazed.app.MazedApp")
+
+GithubRelease.releaseAssets := findTargetFiles(baseDirectory.value, s"*-assembly-${version.value}.jar")
+
+def findTargetFiles(base: File, pattern: String): Seq[File] = {
+  val finder: PathFinder = (base / "target") ** pattern
+  finder.get
+}
 
 lazy val jME3Dependencies = Seq(
   jME3("core"), // Core libraries needed for all jME3 projects
@@ -42,3 +50,19 @@ lazy val slf4j_log4j_adapter = slf4j("log4j-over-slf4j")
 lazy val slf4j_jul_adapter = slf4j("jul-to-slf4j")
 
 def slf4j(name: String) = "org.slf4j" % name % "1.7.21"
+
+
+releaseProcess := Seq[ReleaseStep](
+  checkSnapshotDependencies,
+  inquireVersions,
+  runClean,
+  runTest,
+  setReleaseVersion,
+  commitReleaseVersion,                   // performs the initial git checks
+  pushChanges,                            // also checks that an upstream branch is properly configured
+  releaseStepTask(assembly),
+  releaseStepTask(releaseOnGithub),
+  setNextVersion,
+  commitNextVersion,
+  pushChanges
+)
