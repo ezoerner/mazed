@@ -19,6 +19,7 @@ import com.jme3.system.{AppSettings, JmeContext, JmeSystem}
 import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.LazyLogging
+import mazed.app.Util.eulerAnglesDeg
 import org.slf4j.bridge.SLF4JBridgeHandler
 import mazed._
 
@@ -76,11 +77,12 @@ class MazedApp(rand: Random, config: Config)
   private val moveBackwardSpeed = config.getDouble("player.moveBackwardSpeed").toFloat
   private val lookVerticalSpeed = config.getDouble("player.lookVerticalSpeed").toFloat
   private val rotateSpeed = config.getDouble("player.rotateSpeed").toFloat
-  private val moveCameraSpeed = config.getDouble("player.moveCameraSpeed").toFloat
+  private val moveCameraSpeed = config.getDouble("player.camera.moveSpeed").toFloat
   private val playerHeight = config.getDouble("player.height").toFloat
   private val playerRadius = config.getDouble("player.radius").toFloat
-  private val maxCamDistance =  config.getDouble("player.maxCameraDistance").toFloat
-  private val minCamDistance =  config.getDouble("player.minCameraDistance").toFloat
+  private val maxCamDistance =  config.getDouble("player.camera.maxDistance").toFloat
+  private val minCamDistance =  config.getDouble("player.camera.minDistance").toFloat
+  private val firstPersonCamDistance =  config.getDouble("player.camera.firstPersonDistance").toFloat
 
   private var leftStrafe = false
   private var rightStrafe = false
@@ -88,10 +90,10 @@ class MazedApp(rand: Random, config: Config)
   private var backward = false
 
   // offset of camera from character
-  private var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+  private var cameraOffset = configHelper.getVector3f("player.camera.offset")
 
-  // the camera angle never changes
-  private val cameraAngle = cameraOffset.normalize
+  // the camera direction never changes
+  private val cameraDirection = cameraOffset.normalize
 
   private lazy val bulletAppState = {
     val bulletState =  new BulletAppState
@@ -131,7 +133,7 @@ class MazedApp(rand: Random, config: Config)
     cameraNode.setControlDir(ControlDirection.SpatialToCamera)
     cameraNode.setLocalTranslation(camTargetPosLocal)
     val quat: Quaternion = new Quaternion
-    val cameraLookAt = configHelper.getVector3f("player.cameraLookAt")
+    val cameraLookAt = configHelper.getVector3f("player.camera.lookAt")
     quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
     cameraNode.setLocalRotation(quat)
 
@@ -232,32 +234,32 @@ class MazedApp(rand: Random, config: Config)
 
   override def onAnalog(name: String, value: Float, tpf: Float): Unit =
     name match {
-      case RotateLeft ⇒ rotatePlayer(value, UNIT_Y)
-      case RotateRight ⇒ rotatePlayer(-value, UNIT_Y)
-      case RotateUp ⇒ rotateCamera(-value, UNIT_X)
-      case RotateDown ⇒ rotateCamera(value, UNIT_X)
+      case RotateLeft ⇒ rotatePlayerHorizontally(value)
+      case RotateRight ⇒ rotatePlayerHorizontally(-value)
+      case RotateUp ⇒ rotateCameraVertically(-value)
+      case RotateDown ⇒ rotateCameraVertically(value)
       case MoveCameraIn ⇒ moveCamera(-value)
       case MoveCameraOut ⇒ moveCamera(value)
       case _ ⇒
     }
 
-  private def rotatePlayer(value: Float, axis: Vector3f) = {
-    val rotation = new Quaternion().fromAngleAxis(PI * value * rotateSpeed, axis)
+  private def rotatePlayerHorizontally(value: Float) = {
+    val rotation = new Quaternion().fromAngleAxis(PI * value * rotateSpeed, UNIT_Y)
     player.setViewDirection(rotation mult player.getViewDirection)
   }
 
-
-  private def rotateCamera(value: Float, axis: Vector3f): Unit = {
-    val rotation = new Quaternion().fromAngleAxis(PI * value * lookVerticalSpeed, axis)
+  private def rotateCameraVertically(value: Float): Unit = {
+    val rotation = new Quaternion().fromAngleAxis(PI * value * lookVerticalSpeed, UNIT_X)
     camNode.setLocalRotation(rotation mult camNode.getLocalRotation)
   }
 
+  // updates the cameraOffset, which is always along fixed cameraDirection from player model
   private def  moveCamera(value: Float): Unit = {
     logger.debug(s"mouse axis value = $value")
     val d = (cameraOffset.length + value * moveCameraSpeed) max 0 min maxCamDistance
-    val newDistance = if (d < minCamDistance) 0f else d
+    val newDistance = if (d < minCamDistance) firstPersonCamDistance else d
     logger.debug(s"newDistance=$newDistance")
-    cameraOffset = cameraAngle mult newDistance
+    cameraOffset = cameraDirection mult newDistance
   }
 
   private def playerFinalHeight: Float = {
