@@ -277,18 +277,27 @@ class MazedApp(rand: Random, config: Config)
       return
     }
 
+    val projectionZ = cam.getViewToProjectionZ(cam.getFrustumNear)
 
-    logger.debug(s"topOfHeadLocal=$centerOfHeadLocal")
-    logger.debug(s"targetPos=$targetPosWorld")
-    logger.debug(s"-----------")
-
+    // unordered corners of the (cropped) near plane
     val frustumNearCorners = List(
-      new Vector2f,
-      new Vector2f(cam.getWidth, 0f),
-      new Vector2f(0f, cam.getHeight),
-      new Vector2f(cam.getWidth, cam.getHeight)) map { v2 ⇒
-      cam.getWorldCoordinates(v2, cam.getFrustumNear)
+        new Vector2f,
+        new Vector2f(cam.getWidth, 0f),
+        new Vector2f(0f, cam.getHeight),
+        new Vector2f(cam.getWidth, cam.getHeight)) map { v2 ⇒
+      cam.getWorldCoordinates(v2, projectionZ)
     }
+
+    logger.trace(s"cam.getFrustumNear=${cam.getFrustumNear}")
+    logger.trace(s"projectionZ=$projectionZ")
+    logger.trace(s"centerOfHeadLocal=$centerOfHeadLocal")
+    logger.trace(s"targetPosLocal=$targetPosLocal")
+    logger.trace(s"targetPosWorld=$targetPosWorld")
+    logger.trace(s"cam location=${cam.getLocation}")
+    logger.trace(s"minCamDistance=$minCamDistance")
+    logger.trace(s"cam.getFrustumNear=${cam.getFrustumNear}")
+    logger.trace(s"frustumNearCorners=$frustumNearCorners")
+    logger.trace(s"-----------")
 
     val newCamPosition = handleCollisionZoom(cam.getLocation, targetPosWorld, minCamDistance, frustumNearCorners)
     setCamWorldPosition(newCamPosition)
