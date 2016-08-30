@@ -20,6 +20,7 @@ import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.LazyLogging
 import org.slf4j.bridge.SLF4JBridgeHandler
+import mazed._
 
 import scala.util.Random
 
@@ -132,7 +133,7 @@ class MazedApp(rand: Random, config: Config)
   private[app] lazy val camNode: CameraNode = {
     val cameraNode = new CameraNode("CamNode", cam)
     cameraNode.setControlDir(ControlDirection.SpatialToCamera)
-    cameraNode.setLocalTranslation(cameraOffset)
+    cameraNode.setLocalTranslation(targetPosLocal)
     val quat: Quaternion = new Quaternion
     val cameraLookAt = configHelper.getVector3f("player.cameraLookAt")
     quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
@@ -186,72 +187,6 @@ class MazedApp(rand: Random, config: Config)
     initKeys()
   }
 
-  var firstTime = true
-  // temporarily bring the camera in closer to the player if there's an obstruction in-between
-  private def adjustCamera(): Unit = {
-    if (firstTime) { // the scene isn't full baked on the first frame
-      firstTime = false
-      return
-    }
-
-    var cameraAdjusted = false
-    logger.debug(s"cameraOffset=$cameraOffset")
-    logger.trace(s"characterPos=${characterNode.getWorldTranslation}")
-    // use a 90% fudge factor to simulate distance from top of head to eyes
-    val targetCameraPos = characterNode.localToWorld(cameraOffset add (0, playerFinalHeight * 0.9f, 0), new Vector3f)
-    val topOfHead = characterNode.getWorldTranslation.add(0, playerFinalHeight * 0.9f, 0)
-    if (topOfHead == targetCameraPos) {
-      return // first person mode(?)
-    }
-
-    logger.trace(s"targetCameraPos=$targetCameraPos")
-    logger.trace(s"topOfHead=$topOfHead")
-
-    val distance = targetCameraPos distance topOfHead
-    val directionTowardsCamera = targetCameraPos subtract topOfHead
-    val normalizedDirection = directionTowardsCamera.normalize
-
-    logger.trace(s"directionTowardsCamera=$directionTowardsCamera")
-
-    if (distance <= minCamDistance) {
-      // first person view
-      setCamWorldPosition(topOfHead)
-      cameraAdjusted = true
-    }
-    else {
-      val results = new CollisionResults
-      val ray = new Ray(topOfHead, normalizedDirection)
-      ray.setLimit(distance)
-      logger.trace(s"ray=$ray; limit=$distance")
-      sceneNode.collideWith(ray, results)
-      val isCollision = results.size > 0
-      if (isCollision) {
-        val closest  = results.getClosestCollision
-        val worldContactPoint = closest.getContactPoint
-        logger.trace(s"worldContactPoint = $worldContactPoint")
-        val newDistance = worldContactPoint distance topOfHead
-        if (newDistance <= minCamDistance) {
-          setCamWorldPosition(topOfHead)
-        }
-        else {
-          setCamWorldPosition(worldContactPoint)
-        }
-        cameraAdjusted = true
-      }
-    }
-    if (!cameraAdjusted) {
-      setCamWorldPosition(targetCameraPos)
-    }
-    logger.trace(s"-----------")
-  }
-
-  /**
-    * This is the main event loop--walking happens here.
-    * We check in which direction the player is walking by interpreting
-    * the camera direction forward (camDir) and to the side (camLeft).
-    * The setWalkDirection() command is what lets a physics-controlled player walk.
-    * We also make sure here that the camera moves with player.
-    */
   override def simpleUpdate(tpf: Float): Unit = {
     adjustCamera()
 
@@ -328,6 +263,176 @@ class MazedApp(rand: Random, config: Config)
     logger.debug(s"newDistance=$newDistance")
     cameraOffset = cameraAngle mult newDistance
   }
+
+  def centerOfHeadLocal = new Vector3f(0, playerFinalHeight * 0.9f, 0)
+  def targetPosLocal = centerOfHeadLocal add cameraOffset
+  def targetPosWorld = characterNode.localToWorld(targetPosLocal)
+
+  var firstTime = true
+  // temporarily bring the camera in closer to the player if there's an obstruction in-between
+  private def adjustCamera(): Unit = {
+    if (firstTime) {
+      // the scene isn't full baked on the first frame
+      firstTime = false
+      return
+    }
+
+
+    logger.debug(s"topOfHeadLocal=$centerOfHeadLocal")
+    logger.debug(s"targetPos=$targetPosWorld")
+    logger.debug(s"-----------")
+
+    val frustumNearCorners = List(
+      new Vector2f,
+      new Vector2f(cam.getWidth, 0f),
+      new Vector2f(0f, cam.getHeight),
+      new Vector2f(cam.getWidth, cam.getHeight)) map { v2 ⇒
+      cam.getWorldCoordinates(v2, cam.getFrustumNear)
+    }
+
+    val newCamPosition = handleCollisionZoom(cam.getLocation, targetPosWorld, minCamDistance, frustumNearCorners)
+    setCamWorldPosition(newCamPosition)
+  }
+
+    /*
+        handleCollisionZoom(cam.getLocation, const Vec3& targetPos,
+          float minOffsetDist, const Vec3* frustumNearCorners)
+    */
+/*
+    var cameraAdjusted = false
+    logger.debug(s"cameraOffset=$cameraOffset")
+    logger.trace(s"characterPos=${characterNode.getWorldTranslation}")
+    // use a 90% fudge factor to simulate distance from top of head to eyes
+    val targetCameraPos = characterNode.localToWorld(cameraOffset add (0, playerFinalHeight * 0.9f, 0), new Vector3f)
+    val topOfHead = characterNode.getWorldTranslation.add(0, playerFinalHeight * 0.9f, 0)
+    if (topOfHead == targetCameraPos) {
+      return // first person mode(?)
+    }
+
+    logger.trace(s"targetCameraPos=$targetCameraPos")
+    logger.trace(s"topOfHead=$topOfHead")
+
+    val distance = targetCameraPos distance topOfHead
+    val directionTowardsCamera = targetCameraPos subtract topOfHead
+    val normalizedDirection = directionTowardsCamera.normalize
+
+    logger.trace(s"directionTowardsCamera=$directionTowardsCamera")
+
+    if (distance <= minCamDistance) {
+      // first person view
+      setCamWorldPosition(topOfHead)
+      cameraAdjusted = true
+    }
+    else {
+      val results = new CollisionResults
+      val ray = new Ray(topOfHead, normalizedDirection)
+      ray.setLimit(distance)
+      logger.trace(s"ray=$ray; limit=$distance")
+      sceneNode.collideWith(ray, results)
+      val isCollision = results.size > 0
+      if (isCollision) {
+        val closest  = results.getClosestCollision
+        val worldContactPoint = closest.getContactPoint
+        logger.trace(s"worldContactPoint = $worldContactPoint")
+        val newDistance = worldContactPoint distance topOfHead
+        if (newDistance <= minCamDistance) {
+          setCamWorldPosition(topOfHead)
+        }
+        else {
+          setCamWorldPosition(worldContactPoint)
+        }
+        cameraAdjusted = true
+      }
+    }
+    if (!cameraAdjusted) {
+      setCamWorldPosition(targetCameraPos)
+    }
+    logger.trace(s"-----------")
+  }
+*/
+
+  // returns a new camera position
+  private def handleCollisionZoom(
+    camPos: Vector3f,
+    targetPos: Vector3f,
+    minOffsetDist: Float,
+    frustumNearCorners: List[Vector3f]): Vector3f = {
+
+    val offsetDist = targetPos distance camPos
+    val raycastLength = offsetDist - minOffsetDist
+    if (raycastLength < 0f) {
+      // camera is already too near the lookat target
+      camPos
+    } else {
+      val camOut = (targetPos subtract camPos).normalize
+      val nearestCamPos = targetPos subtract (camOut mult minOffsetDist)
+      var minHitDistance = raycastLength
+
+      frustumNearCorners foreach { corner ⇒
+        val offsetToCorner = corner subtract camPos
+        val rayStart = nearestCamPos add offsetToCorner
+        val rayEnd = corner
+        // a result between 0 and 1 indicates a hit along the hit segment
+        val rayLength = rayEnd distance rayStart
+        val ray = new Ray(rayStart, (rayEnd subtract rayStart).normalize)
+        ray.setLimit(rayLength)
+        val results = new CollisionResults
+        sceneNode.collideWith(ray, results)
+        if (results.size > 0) {
+          minHitDistance = results.getClosestCollision.getDistance min minHitDistance
+        }
+      }
+
+      if (minHitDistance < raycastLength) {
+        nearestCamPos subtract (camOut mult minHitDistance)
+      }
+      else {
+        camPos
+      }
+    }
+  }
+
+  // returns a new camera position
+  /*
+Vec3 HandleCollisionZoom(const Vec3& camPos, const Vec3& targetPos,
+  float minOffsetDist, const Vec3* frustumNearCorners)
+
+{
+float offsetDist = Length(targetPos - camPos);
+float raycastLength = offsetDist - minOffsetDist;
+if (raycastLength < 0.f)
+{
+    // camera is already too near the lookat target
+    return camPos;
+}
+
+Vec3 camOut = Normalize(targetPos - camPos);
+Vec3 nearestCamPos = targetPos - camOut * minOffsetDist;
+float minHitFraction = 1.f;
+
+for (int i = 0; i < 4; i++)
+{
+    const Vec3& corner = frustumNearCorners[i];
+    Vec3 offsetToCorner = corner - camPos;
+    Vec3 rayStart = nearestCamPos + offsetToCorner;
+    Vec3 rayEnd = corner;
+    // a result between 0 and 1 indicates a hit along the ray segment
+    float hitFraction = CastRay(rayStart, rayEnd);
+    minHitFraction = Min(hitFraction, minHitFraction);
+}
+
+if (minHitFraction < 1.f)
+{
+    return nearestCamPos - camOut * (raycastLength * minHitFraction);
+}
+else
+{
+    return camPos;
+}
+}
+*/
+
+
 
   private def setCamWorldPosition(worldPosition: Vector3f): Unit = {
     camNode.setLocalTranslation(characterNode.worldToLocal(worldPosition, new Vector3f))
