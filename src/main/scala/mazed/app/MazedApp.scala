@@ -19,9 +19,8 @@ import com.jme3.system.{AppSettings, JmeContext, JmeSystem}
 import com.jme3.util.SkyFactory
 import com.typesafe.config.{Config, ConfigFactory}
 import com.typesafe.scalalogging.LazyLogging
-import mazed.app.Util.eulerAnglesDeg
-import org.slf4j.bridge.SLF4JBridgeHandler
 import mazed._
+import org.slf4j.bridge.SLF4JBridgeHandler
 
 import scala.util.Random
 
@@ -302,7 +301,11 @@ class MazedApp(rand: Random, config: Config)
 
     logger.trace(s"-----------")
 
-    val newCamPosition = handleCollisionZoom(camTargetPosWorld, lookAtTargetPosWorld, minCamDistance, frustumNearCorners)
+    val newCamPosition = handleCollisionZoom(
+      camTargetPosWorld,
+      lookAtTargetPosWorld,
+      minCamDistance,
+      frustumNearCorners)
     setCamWorldPosition(newCamPosition)
   }
 
