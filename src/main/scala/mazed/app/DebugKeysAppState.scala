@@ -27,13 +27,6 @@ class DebugKeysAppState() extends AbstractAppState with LazyLogging {
   private val keyListener = new DebugKeyListener
 
   private lazy val inputManager = app.getInputManager
-  private lazy val camNode = app.camNode
-  private lazy val sceneNode = app.sceneNode
-  private lazy val characterNode = app.characterNode
-  private lazy val player = app.player
-
-  private def cameraOffset = app.cameraOffset
-  private def playerFinalHeight = app.playerFinalHeight
 
   override def initialize(stateManager: AppStateManager, app: Application): Unit = {
     super.initialize(stateManager, app)

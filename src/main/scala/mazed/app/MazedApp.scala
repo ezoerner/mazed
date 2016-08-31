@@ -88,21 +88,17 @@ class MazedApp(rand: Random, config: Config)
   private var backward = false
 
   // offset of camera from character
-  private[app] var cameraOffset = configHelper.getVector3f("player.cameraOffset")
+  private var cameraOffset = configHelper.getVector3f("player.cameraOffset")
 
   // the camera angle never changes
   private val cameraAngle = cameraOffset.normalize
-
-  private[app] def playerFinalHeight: Float = {
-    playerHeight * (if (player.isDucked) player.getDuckedFactor else 1f)
-  }
 
   private lazy val bulletAppState = {
     val bulletState =  new BulletAppState
     bulletState
   }
 
-  private[app] lazy val (player, characterNode): (BetterCharacterControl, Node) = {
+  private lazy val (player, characterNode): (BetterCharacterControl, Node) = {
     val mass = config.getDouble("player.mass").toFloat
     val initialLocation = configHelper.getVector3f("player.initialLocation")
     val jumpForce = configHelper.getVector3f("player.jumpForce")
@@ -130,10 +126,10 @@ class MazedApp(rand: Random, config: Config)
   }
 
 
-  private[app] lazy val camNode: CameraNode = {
+  private lazy val camNode: CameraNode = {
     val cameraNode = new CameraNode("CamNode", cam)
     cameraNode.setControlDir(ControlDirection.SpatialToCamera)
-    cameraNode.setLocalTranslation(targetPosLocal)
+    cameraNode.setLocalTranslation(camTargetPosLocal)
     val quat: Quaternion = new Quaternion
     val cameraLookAt = configHelper.getVector3f("player.cameraLookAt")
     quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
@@ -142,7 +138,7 @@ class MazedApp(rand: Random, config: Config)
     cameraNode
   }
 
-  private[app] lazy val sceneNode: Node = {
+  private lazy val sceneNode: Node = {
     val (mazeNode, floor) = new MazeSceneBuilder(config, assetManager).build
     val scene = new Node()
     scene.attachChild(mazeNode)
@@ -251,12 +247,12 @@ class MazedApp(rand: Random, config: Config)
   }
 
 
-  def rotateCamera(value: Float, axis: Vector3f): Unit = {
+  private def rotateCamera(value: Float, axis: Vector3f): Unit = {
     val rotation = new Quaternion().fromAngleAxis(PI * value * lookVerticalSpeed, axis)
     camNode.setLocalRotation(rotation mult camNode.getLocalRotation)
   }
 
-  def  moveCamera(value: Float): Unit = {
+  private def  moveCamera(value: Float): Unit = {
     logger.debug(s"mouse axis value = $value")
     val d = (cameraOffset.length + value * moveCameraSpeed) max 0 min maxCamDistance
     val newDistance = if (d < minCamDistance) 0f else d
@@ -264,11 +260,15 @@ class MazedApp(rand: Random, config: Config)
     cameraOffset = cameraAngle mult newDistance
   }
 
-  def centerOfHeadLocal = new Vector3f(0, playerFinalHeight * 0.9f, 0)
-  def targetPosLocal = centerOfHeadLocal add cameraOffset
-  def lookAtTargetPosWorld = characterNode.localToWorld(centerOfHeadLocal)
+  private def playerFinalHeight: Float = {
+    playerHeight * (if (player.isDucked) player.getDuckedFactor else 1f)
+  }
+  private def centerOfHeadLocal = new Vector3f(0, playerFinalHeight * 0.9f, 0)
+  private def camTargetPosLocal = centerOfHeadLocal add cameraOffset
+  private def camTargetPosWorld = characterNode.localToWorld(camTargetPosLocal)
+  private def lookAtTargetPosWorld = characterNode.localToWorld(centerOfHeadLocal)
 
-  var firstTime = true
+  private var firstTime = true
   // temporarily bring the camera in closer to the player if there's an obstruction in-between
   private def adjustCamera(): Unit = {
     if (firstTime) {
@@ -291,15 +291,16 @@ class MazedApp(rand: Random, config: Config)
     logger.trace(s"cam.getFrustumNear=${cam.getFrustumNear}")
     logger.trace(s"projectionZ=$projectionZ")
     logger.trace(s"centerOfHeadLocal=$centerOfHeadLocal")
-    logger.trace(s"targetPosLocal=$targetPosLocal")
+    logger.trace(s"targetPosLocal=$camTargetPosLocal")
     logger.trace(s"cam location=${cam.getLocation}")
+    logger.trace(s"camTargetPosWorld=${cam.getLocation}")
     logger.trace(s"minCamDistance=$minCamDistance")
     logger.trace(s"cam.getFrustumNear=${cam.getFrustumNear}")
     logger.trace(s"frustumNearCorners=$frustumNearCorners")
 
     logger.trace(s"-----------")
 
-    val newCamPosition = handleCollisionZoom(cam.getLocation, lookAtTargetPosWorld, minCamDistance, frustumNearCorners)
+    val newCamPosition = handleCollisionZoom(camTargetPosWorld, lookAtTargetPosWorld, minCamDistance, frustumNearCorners)
     setCamWorldPosition(newCamPosition)
   }
 
