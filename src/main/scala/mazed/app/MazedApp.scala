@@ -13,6 +13,7 @@ import com.jme3.light.{AmbientLight, DirectionalLight}
 import com.jme3.math.FastMath.PI
 import com.jme3.math.Vector3f.{UNIT_X, UNIT_Y, UNIT_Z}
 import com.jme3.math._
+import com.jme3.renderer.Camera
 import com.jme3.scene.control.CameraControl.ControlDirection
 import com.jme3.scene.{CameraNode, Node}
 import com.jme3.system.{AppSettings, JmeContext, JmeSystem}
@@ -89,10 +90,10 @@ class MazedApp(rand: Random, config: Config)
   private var backward = false
 
   // offset of camera from character
-  private var cameraOffset = configHelper.getVector3f("player.camera.offset")
+  private val initialCameraOffset = configHelper.getVector3f("player.camera.offset")
 
   // the camera direction never changes
-  private val cameraDirection = cameraOffset.normalize
+  private val cameraDirection = initialCameraOffset.normalize
 
   private lazy val bulletAppState = {
     val bulletState =  new BulletAppState
@@ -126,17 +127,28 @@ class MazedApp(rand: Random, config: Config)
     (physicsCharacter, charNode)
   }
 
-
   private lazy val camNode: CameraNode = {
     val cameraNode = new CameraNode("CamNode", cam)
     cameraNode.setControlDir(ControlDirection.SpatialToCamera)
-    cameraNode.setLocalTranslation(camTargetPosLocal)
-    val quat: Quaternion = new Quaternion
+    cameraNode.setLocalTranslation(centerOfHeadLocal add initialCameraOffset)
     val cameraLookAt = configHelper.getVector3f("player.camera.lookAt")
+    val quat: Quaternion = new Quaternion
     quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
     cameraNode.setLocalRotation(quat)
-
     cameraNode
+  }
+
+  // tracks the "target position" of the camera without rendering a ViewPort
+  private lazy val (ghostCamNode, ghostCam): (CameraNode, Camera) = {
+    val ghostCamera = cam.clone
+    val cameraNode = new CameraNode("Ghost CamNode", ghostCamera)
+    cameraNode.setControlDir(ControlDirection.SpatialToCamera)
+    cameraNode.setLocalTranslation(centerOfHeadLocal add initialCameraOffset)
+    val cameraLookAt = configHelper.getVector3f("player.camera.lookAt")
+    val quat: Quaternion = new Quaternion
+    quat.lookAt(cameraLookAt, Vector3f.UNIT_Y)
+    cameraNode.setLocalRotation(quat)
+    (cameraNode, ghostCamera)
   }
 
   private lazy val sceneNode: Node = {
@@ -181,6 +193,7 @@ class MazedApp(rand: Random, config: Config)
     rootNode.attachChild(sceneNode)
     rootNode.attachChild(characterNode)
     characterNode.attachChild(camNode)
+    characterNode.attachChild(ghostCamNode)
     initKeys()
   }
 
@@ -237,8 +250,8 @@ class MazedApp(rand: Random, config: Config)
       case RotateRight ⇒ rotatePlayerHorizontally(-value)
       case RotateUp ⇒ rotateCameraVertically(-value)
       case RotateDown ⇒ rotateCameraVertically(value)
-      case MoveCameraIn ⇒ moveCamera(-value)
-      case MoveCameraOut ⇒ moveCamera(value)
+      case MoveCameraIn ⇒ moveGhostCameraOffset(-value)
+      case MoveCameraOut ⇒ moveGhostCameraOffset(value)
       case _ ⇒
     }
 
@@ -250,35 +263,35 @@ class MazedApp(rand: Random, config: Config)
   private def rotateCameraVertically(value: Float): Unit = {
     val rotation = new Quaternion().fromAngleAxis(PI * value * lookVerticalSpeed, UNIT_X)
     camNode.setLocalRotation(rotation mult camNode.getLocalRotation)
+    ghostCamNode.setLocalRotation(camNode.getLocalRotation)
   }
 
-  // updates the cameraOffset, which is always along fixed cameraDirection from player model
-  private def  moveCamera(value: Float): Unit = {
+  // updates the ghost camera, which is always along fixed cameraDirection from player model
+  private def  moveGhostCameraOffset(value: Float): Unit = {
     logger.debug(s"mouse axis value = $value")
-    val d = (cameraOffset.length + value * moveCameraSpeed) max 0 min maxCamDistance
+    val camOffset = ghostCamNode.getLocalTranslation
+    val d = (camOffset.length + value * moveCameraSpeed) max 0 min maxCamDistance
     val newDistance = if (d < minCamDistance) firstPersonCamDistance else d
     logger.debug(s"newDistance=$newDistance")
-    cameraOffset = cameraDirection mult newDistance
+    ghostCamNode.setLocalTranslation(cameraDirection mult newDistance)
   }
 
   private def playerFinalHeight: Float = {
     playerHeight * (if (player.isDucked) player.getDuckedFactor else 1f)
   }
   private def centerOfHeadLocal = new Vector3f(0, playerFinalHeight * 0.9f, 0)
-  private def camTargetPosLocal = centerOfHeadLocal add cameraOffset
-  private def camTargetPosWorld = characterNode.localToWorld(camTargetPosLocal)
   private def lookAtTargetPosWorld = characterNode.localToWorld(centerOfHeadLocal)
 
   private var firstTime = true
   // temporarily bring the camera in closer to the player if there's an obstruction in-between
   private def adjustCamera(): Unit = {
     if (firstTime) {
-      // the scene isn't full baked on the first frame
+      // the scene isn't fully baked on the first frame
       firstTime = false
       return
     }
 
-    val projectionZ = cam.getViewToProjectionZ(cam.getFrustumNear)
+    val projectionZ = ghostCam.getViewToProjectionZ(cam.getFrustumNear)
 
     // unordered corners of the (cropped) near plane
     val frustumNearCorners = List(
@@ -286,9 +299,10 @@ class MazedApp(rand: Random, config: Config)
         new Vector2f(cam.getWidth, 0f),
         new Vector2f(0f, cam.getHeight),
         new Vector2f(cam.getWidth, cam.getHeight)) map { v2 ⇒
-      cam.getWorldCoordinates(v2, projectionZ)
+      ghostCam.getWorldCoordinates(v2, projectionZ)
     }
 
+/*
     logger.trace(s"cam.getFrustumNear=${cam.getFrustumNear}")
     logger.trace(s"projectionZ=$projectionZ")
     logger.trace(s"centerOfHeadLocal=$centerOfHeadLocal")
@@ -300,12 +314,22 @@ class MazedApp(rand: Random, config: Config)
     logger.trace(s"frustumNearCorners=$frustumNearCorners")
 
     logger.trace(s"-----------")
+*/
+
+/*
+    logger.trace(s"camTargetPosWorld=$camTargetPosWorld")
+    logger.trace(s"lookAtTargetPosWorld=$lookAtTargetPosWorld")
+    logger.trace(s"minCamDistance=$minCamDistance")
+    logger.trace(s"frustumNearCorners=$frustumNearCorners")
+*/
 
     val newCamPosition = handleCollisionZoom(
-      camTargetPosWorld,
+      ghostCam.getLocation,
       lookAtTargetPosWorld,
       minCamDistance,
       frustumNearCorners)
+    logger.trace(s"newCamPosition=$newCamPosition")
+    logger.trace("-------------")
     setCamWorldPosition(newCamPosition)
   }
 
@@ -318,15 +342,15 @@ class MazedApp(rand: Random, config: Config)
 
     val offsetDist = targetPos distance camPos
     val raycastLength = offsetDist - minOffsetDist
+    val camOut = (targetPos subtract camPos).normalize
     if (raycastLength < 0f) {
       // camera is already too near the lookat target
-      camPos
+      logger.trace(s"returning camPos=$camPos (already too far)")
+      targetPos subtract (camOut mult firstPersonCamDistance)
     } else {
-      val camOut = (targetPos subtract camPos).normalize
       val nearestCamPos = targetPos subtract (camOut mult minOffsetDist)
-      var minHitDistance = raycastLength
 
-      frustumNearCorners foreach { corner ⇒
+      val minHitDistance = frustumNearCorners.foldLeft(raycastLength) { case (minSoFar, corner) ⇒
         val offsetToCorner = corner subtract camPos
         val rayStart = nearestCamPos add offsetToCorner
         val rayEnd = corner
@@ -336,15 +360,17 @@ class MazedApp(rand: Random, config: Config)
         ray.setLimit(rayLength)
         val results = new CollisionResults
         sceneNode.collideWith(ray, results)
-        if (results.size > 0) {
-          minHitDistance = results.getClosestCollision.getDistance min minHitDistance
-        }
+        if (results.size > 0) results.getClosestCollision.getDistance min minSoFar
+        else rayLength min minSoFar
       }
 
       if (minHitDistance < raycastLength) {
-        nearestCamPos subtract (camOut mult minHitDistance)
+        val newCamPos = nearestCamPos subtract (camOut mult minHitDistance)
+        logger.trace(s"returning newCamPos=$newCamPos")
+        newCamPos
       }
       else {
+        logger.trace(s"returning camPos=$camPos")
         camPos
       }
     }
