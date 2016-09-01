@@ -1,0 +1,3 @@
+Pre-release of Mazed game.
+
+This version improves on the "collision zoom" of the camera in third person view.
