@@ -1,4 +1,3 @@
-import sbtrelease.ReleasePlugin.autoImport.ReleaseKeys._
 import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
 
 name := "mazed"
