@@ -57,8 +57,8 @@ class CameraControlState extends AbstractAppState with AnalogListener {
 
 
   override def initialize(
-    stateManager: AppStateManager,
-    app: Application): Unit = {
+      stateManager: AppStateManager,
+      app: Application): Unit = {
     super.initialize(stateManager, app)
     this.app = app.asInstanceOf[MazedApp]
     this.app.characterNode.attachChild(camNode)

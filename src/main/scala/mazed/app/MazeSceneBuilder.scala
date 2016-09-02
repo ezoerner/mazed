@@ -15,9 +15,8 @@ import mazed.maze.{Cell, ChooseStrategyImpl, Maze}
 import scala.collection.BitSet
 import scala.util.Random
 
-class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random = Random) {
-  private val configHelper = new ConfigHelper(config)
-  val cellDim = configHelper.getVector3f("maze.cell")
+class MazeSceneBuilder(assetManager: AssetManager, rand: Random = Random) {
+  val cellDim = Configuration.mazeCellDim
   val entrance = Cell((0, 0))
 
   /** returns the maze  and the floor */
@@ -28,14 +27,10 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
   // adds maze with upper left corner at origin
   private def createMaze: Node = {
     val mazeNode = new Node()
-    val wallThickness = config.getDouble("maze.wall.thickness").toFloat
+    val wallThickness = Configuration.mazeWallThickness
 
     val strategy = ChooseStrategyImpl(makeWeights(newest = 50, random = 50), rand)
-    val maze = Maze.generate(
-      config.getInt("maze.height"),
-      config.getInt("maze.width"),
-      strategy,
-      rand)
+    val maze = Maze.generate(Configuration.mazeHeight, Configuration.mazeWidth, strategy, rand)
     val bitSets = maze.manifestAsBitSets
 
     bitSets.zipWithIndex foreach { case (bitSet, i) ⇒
@@ -129,7 +124,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
     addBox(
       "wall",
       box,
-      if (isEntrance) "maze.entrance" else "maze.wall",
+      if (isEntrance) Configuration.mazeEntranceConfig else Configuration.mazeWallConfig,
       translation,
       Some(node))
   }
@@ -137,19 +132,18 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
   private def addBox(
     name: String,
     box: Box,
-    configPath: String,
+    config: Config,
     translation: Vector3f,
     maybeNode: Option[Node]): Geometry = {
 
   val geom: Geometry = new Geometry(name, box)
   val mat: Material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md")
-  val cfg = new ConfigHelper(config.getConfig(configPath))
-  cfg.getOptionalVector2f("textureScale") foreach { v2 ⇒
+  Configuration.getOptionalVector2f("textureScale", config) foreach { v2 ⇒
     box.scaleTextureCoordinates(v2)
   }
 
-  val isTransparent = cfg.getOptionalBoolean("transparent").fold(false)(identity)
-  cfg.getOptionalString("texture") foreach { t ⇒
+  val isTransparent = Configuration.getOptionalBoolean("transparent", config).fold(false)(identity)
+    Configuration.getOptionalString("texture", config) foreach { t ⇒
     val tex = assetManager.loadTexture(t)
     tex.setWrap(WrapMode.Repeat)
     if (isTransparent) {
@@ -158,7 +152,7 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
     }
     mat.setTexture("ColorMap", tex)
   }
-  cfg.getOptionalColor("color") foreach (c ⇒ mat.setColor("Color", c))
+  Configuration.getOptionalColor("color", config) foreach (c ⇒ mat.setColor("Color", c))
   geom.setMaterial(mat)
   if (isTransparent) {
     geom.setQueueBucket(Bucket.Transparent)
@@ -169,11 +163,11 @@ class MazeSceneBuilder(config: Config, assetManager: AssetManager, rand: Random 
 }
 
 private def createFloor: Geometry = {
-  val margin = config.getDouble("maze.floor.margin").toFloat
-  val floorDim = configHelper.getVector3f("maze.floor.size")
+  val margin = Configuration.mazeFloorMargin
+  val floorDim = Configuration.mazeFloorSize
   val floor = new Box(floorDim.x / 2, floorDim.y / 2, floorDim.z / 2)
   val translation = new Vector3f(floorDim.x / 2 - margin, -floorDim.y / 2, floorDim.z / 2 - margin)
-  addBox("Floor", floor, "maze.floor", translation, None)
+  addBox("Floor", floor, Configuration.mazeFloorConfig, translation, None)
 }
 
 

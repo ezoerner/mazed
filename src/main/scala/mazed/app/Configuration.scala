@@ -1,10 +1,14 @@
 package mazed.app
 
 import com.jme3.math.{ColorRGBA, Vector2f, Vector3f}
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 
 object Configuration {
-  val config = ConfigFactory.load()
+  private val config = ConfigFactory.load()
+
+  val appDebugBullet = config.getBoolean("app.debugBullet")
+  val appEnableFpsText = config.getBoolean("app.enableFpsText")
+  val appSettingsDialogImage = config.getString("app.settingsDialogImage")
 
   val moveForwardSpeed = config.getDouble("player.moveForwardSpeed").toFloat
   val moveSidewaysSpeed = config.getDouble("player.moveSidewaysSpeed").toFloat
@@ -14,6 +18,8 @@ object Configuration {
   val moveCameraSpeed = config.getDouble("player.camera.moveSpeed").toFloat
   val playerHeight = config.getDouble("player.height").toFloat
   val playerRadius = config.getDouble("player.radius").toFloat
+  val playerMass = config.getDouble("player.mass").toFloat
+  val playerModelScale = config.getDouble("player.modelScale").toFloat
   val maxCamDistance =  config.getDouble("player.camera.maxDistance").toFloat
   val minCamDistance =  config.getDouble("player.camera.minDistance").toFloat
   val firstPersonCamDistance =  config.getDouble("player.camera.firstPersonDistance").toFloat
@@ -27,23 +33,33 @@ object Configuration {
   val skyTexture = getOptionalString("maze.sky.texture")
   val skyColor = getOptionalColor("maze.sky.color")
 
-  private def getVector3f(path: String): Vector3f = {
-    val subConfig = config.getConfig(path)
+  val mazeCellDim = getVector3f("maze.cell")
+  val mazeWallThickness = config.getDouble("maze.wall.thickness").toFloat
+  val mazeHeight = config.getInt("maze.height")
+  val mazeWidth = config.getInt("maze.width")
+  val mazeEntranceConfig = config.getConfig("maze.entrance")
+  val mazeWallConfig = config.getConfig("maze.wall")
+  val mazeFloorConfig = config.getConfig("maze.floor")
+  val mazeFloorMargin = config.getDouble("maze.floor.margin").toFloat
+  val mazeFloorSize = getVector3f("maze.floor.size")
+
+  def getVector3f(path: String, cfg: Config = config): Vector3f = {
+    val subConfig = cfg.getConfig(path)
     new Vector3f(
       subConfig.getDouble("x").toFloat,
       subConfig.getDouble("y").toFloat,
       subConfig.getDouble("z").toFloat)
   }
 
-  private def getVector2f(path: String): Vector2f = {
-    val subConfig = config.getConfig(path)
+  def getVector2f(path: String, cfg: Config = config): Vector2f = {
+    val subConfig = cfg.getConfig(path)
     new Vector2f(
       subConfig.getDouble("x").toFloat,
       subConfig.getDouble("y").toFloat)
   }
 
-  private def getColor(path: String): ColorRGBA = {
-    val subConfig = config.getConfig(path)
+  def getColor(path: String, cfg: Config = config): ColorRGBA = {
+    val subConfig = cfg.getConfig(path)
     new ColorRGBA(
       subConfig.getDouble("r").toFloat,
       subConfig.getDouble("g").toFloat,
@@ -51,20 +67,20 @@ object Configuration {
       subConfig.getDouble("a").toFloat)
   }
 
-  private def getOptionalColor(path: String): Option[ColorRGBA] =
-    if (config.hasPath(path)) Some(getColor(path))
+  def getOptionalColor(path: String, cfg: Config = config): Option[ColorRGBA] =
+    if (cfg.hasPath(path)) Some(getColor(path, cfg))
     else None
 
-  private def getOptionalString(path: String): Option[String] =
-    if (config.hasPath(path)) Some(config.getString(path))
+  def getOptionalString(path: String, cfg: Config = config): Option[String] =
+    if (cfg.hasPath(path)) Some(cfg.getString(path))
     else None
 
-  private def getOptionalVector2f(path: String): Option[Vector2f] =
-    if (config.hasPath(path)) Some(getVector2f(path))
+  def getOptionalVector2f(path: String, cfg: Config = config): Option[Vector2f] =
+    if (cfg.hasPath(path)) Some(getVector2f(path, cfg))
     else None
 
-  private def getOptionalBoolean(path: String) = {
-    if (config.hasPath(path)) Some(config.getBoolean(path))
+  def getOptionalBoolean(path: String, cfg: Config = config) = {
+    if (cfg.hasPath(path)) Some(cfg.getBoolean(path))
     else None
   }
 }
