@@ -13,3 +13,5 @@ You can run this jar by double-clicking it on most platforms as long as you alre
 Navigate using A,S,D,L keys.
 Space to jump.
 Mouse wheel to zoom in and out. If you zoom all the way in, it becomes first-person.
+
+The object is to escape the maze.
