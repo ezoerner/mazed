@@ -1,5 +1,5 @@
-#Mazed
-##3D Maze game
+# Mazed
+## 3D Maze game
 _implemented in Scala using JMonkeyEngine_
 
 To run, go to the [releases](https://github.com/ezoerner/mazed/releases) page and download the latest
